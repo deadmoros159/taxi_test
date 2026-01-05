@@ -1,0 +1,209 @@
+services:
+  # ==================== AUTH SERVICE ====================
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: taxi-auth-service
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - RUN_MIGRATIONS=true
+      - POSTGRES_SERVER=postgres-auth
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=auth_db
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres-auth:5432/auth_db
+    env_file:
+      - ./auth-service/.env
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== DRIVER SERVICE ====================
+  driver-service:
+    build:
+      context: .
+      dockerfile: ./driver-service/Dockerfile
+    container_name: taxi-driver-service
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - POSTGRES_SERVER=postgres-driver
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=driver_db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres-driver:5432/driver_db
+      - AUTH_SERVICE_URL=http://auth-service:8000
+    depends_on:
+      postgres-driver:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== ORDER SERVICE ====================
+  # order-service:
+  #   build:
+  #     context: ./order_service
+  #     dockerfile: Dockerfile
+  #   container_name: taxi-order-service
+  #   ports:
+  #     - "8002:8002"
+  #   environment:
+  #     - ENVIRONMENT=production
+  #     - DEBUG=false
+  #     - AUTH_SERVICE_URL=http://auth-service:8000
+  #     - DRIVER_SERVICE_URL=http://driver-service:8001
+  #   depends_on:
+  #     auth-service:
+  #       condition: service_healthy
+  #     driver-service:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   restart: unless-stopped
+  #   networks:
+  #     - taxi-network
+
+  # ==================== API GATEWAY ====================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: taxi-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - DRIVER_SERVICE_URL=http://driver-service:8001
+      # - ORDER_SERVICE_URL=http://order-service:8002
+    depends_on:
+      - auth-service
+      - driver-service
+      # - order-service
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== DATABASES ====================
+  postgres-auth:
+    image: postgres:15-alpine
+    container_name: taxi-postgres-auth
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+      - ./auth-service/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  postgres-driver:
+    image: postgres:15-alpine
+    container_name: taxi-postgres-driver
+    environment:
+      POSTGRES_DB: driver_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_driver_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== REDIS ====================
+  redis:
+    image: redis:7-alpine
+    container_name: taxi-redis
+    command: >
+      sh -c "redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"
+    env_file:
+      - ./auth-service/.env
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: >
+        sh -c "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== MIGRATIONS ====================
+  auth-migrations:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: taxi-auth-migrations
+    command: sh -c "sleep 10 && alembic upgrade head || echo 'No migrations to apply'"
+    environment:
+      - POSTGRES_SERVER=postgres-auth
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=auth_db
+      - POSTGRES_PORT=5432
+    env_file:
+      - ./auth-service/.env
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    networks:
+      - taxi-network
+    profiles:
+      - migrations
+
+volumes:
+  postgres_auth_data:
+  postgres_driver_data:
+  redis_data:
+
+networks:
+  taxi-network:
+    driver: bridge
+

@@ -1,0 +1,43 @@
+# Основные
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0  # Для production
+
+# База данных
+sqlalchemy==2.0.23
+asyncpg==0.29.0  # Асинхронный PostgreSQL драйвер
+alembic==1.12.1
+psycopg2-binary==2.9.9  # Для миграций
+
+# Безопасность и токены
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+pyjwt==2.8.0  # Дополнительно для JWT
+
+# Валидация и конфигурация
+pydantic==2.5.0
+pydantic-settings==2.1.0
+phonenumbers==8.13.25
+email-validator==2.1.0
+
+# Кэш и очередь
+redis[hiredis]==5.0.1  # Включает асинхронную поддержку через redis.asyncio
+
+# HTTP клиенты
+httpx==0.25.1
+aiohttp==3.9.1
+
+# Утилиты
+python-dotenv==1.0.0
+python-multipart==0.0.6
+structlog==23.1.0  # Структурированное логирование
+limits==3.6.0  # Rate limiting
+
+# Для SMS
+firebase-admin==6.2.0
+pyrebase4==4.6.0
+requests==2.31.0
+
+
+aiosmtplib>=2.0.0
+email-validator>=2.0.0

@@ -1,0 +1,34 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus сам себя
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Auth Service
+  - job_name: 'auth-service'
+    static_configs:
+      - targets: ['auth-service:8000']
+    metrics_path: '/metrics'
+
+  # Driver Service
+  - job_name: 'driver-service'
+    static_configs:
+      - targets: ['driver-service:8001']
+    metrics_path: '/metrics'
+
+  # Order Service
+  - job_name: 'order-service'
+    static_configs:
+      - targets: ['order-service:8002']
+    metrics_path: '/metrics'
+
+  # Admin Service
+  - job_name: 'admin-service'
+    static_configs:
+      - targets: ['admin-service:8003']
+    metrics_path: '/metrics'
+

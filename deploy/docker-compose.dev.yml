@@ -1,0 +1,236 @@
+version: '3.8'
+
+services:
+  # ==================== AUTH SERVICE ====================
+  auth-service:
+    build:
+      context: ../auth-service
+      dockerfile: Dockerfile
+    container_name: taxi-auth-service-dev
+    ports:
+      - "9000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - RUN_MIGRATIONS=true
+      - POSTGRES_SERVER=postgres-auth
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=auth_db
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-auth:5432/auth_db
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+    env_file:
+      - ../auth-service/.env
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network-dev
+    volumes:
+      - ../shared:/app/shared:ro
+
+  # ==================== DRIVER SERVICE ====================
+  driver-service:
+    build:
+      context: ..
+      dockerfile: ./driver-service/Dockerfile
+    container_name: taxi-driver-service-dev
+    ports:
+      - "9001:8001"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - POSTGRES_SERVER=postgres-driver
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=driver_db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-driver:5432/driver_db
+      - AUTH_SERVICE_URL=http://auth-service:8000
+    depends_on:
+      postgres-driver:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network-dev
+    volumes:
+      - ../shared:/app/shared:ro
+
+  # ==================== ORDER SERVICE ====================
+  order-service:
+    build:
+      context: ../order-service
+      dockerfile: Dockerfile
+    container_name: taxi-order-service-dev
+    ports:
+      - "9002:8002"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - POSTGRES_SERVER=postgres-order
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=order_db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-order:5432/order_db
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - DRIVER_SERVICE_URL=http://driver-service:8001
+    depends_on:
+      postgres-order:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      driver-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network-dev
+    volumes:
+      - ../shared:/app/shared:ro
+
+  # ==================== ADMIN SERVICE ====================
+  admin-service:
+    build:
+      context: ../admin-service
+      dockerfile: Dockerfile
+    container_name: taxi-admin-service-dev
+    ports:
+      - "9003:8003"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - DRIVER_SERVICE_URL=http://driver-service:8001
+      - ORDER_SERVICE_URL=http://order-service:8002
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      driver-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network-dev
+    volumes:
+      - ../shared:/app/shared:ro
+
+  # ==================== DATABASES ====================
+  postgres-auth:
+    image: postgres:15-alpine
+    container_name: taxi-postgres-auth-dev
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_auth_data_dev:/var/lib/postgresql/data
+      - ../auth-service/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network-dev
+
+  postgres-driver:
+    image: postgres:15-alpine
+    container_name: taxi-postgres-driver-dev
+    environment:
+      POSTGRES_DB: driver_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_driver_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network-dev
+
+  postgres-order:
+    image: postgres:15-alpine
+    container_name: taxi-postgres-order-dev
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_order_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network-dev
+
+  # ==================== REDIS ====================
+  redis:
+    image: redis:7-alpine
+    container_name: taxi-redis-dev
+    command: >
+      sh -c "redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - redis_data_dev:/data
+    healthcheck:
+      test: >
+        sh -c "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network-dev
+
+volumes:
+  postgres_auth_data_dev:
+  postgres_driver_data_dev:
+  postgres_order_data_dev:
+  redis_data_dev:
+
+networks:
+  taxi-network-dev:
+    driver: bridge
+

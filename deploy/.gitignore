@@ -1,0 +1,12 @@
+# SSL сертификаты
+ssl/*.key
+ssl/*.crt
+ssl/*.pem
+
+# Переменные окружения
+env/.env.prod
+env/.env.dev
+
+# Логи
+*.log
+

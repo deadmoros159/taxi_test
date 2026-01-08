@@ -43,7 +43,10 @@ class DriverRepository:
         license_expiry,
         passport_number: str,
         registered_by: int,
-        vehicle_data: VehicleCreate
+        vehicle_data: VehicleCreate,
+        license_photo_url: Optional[str] = None,
+        passport_photo_url: Optional[str] = None,
+        driver_photo_url: Optional[str] = None
     ) -> Driver:
         """Создать водителя с автомобилем"""
         # Создаем водителя
@@ -52,6 +55,9 @@ class DriverRepository:
             license_number=license_number,
             license_expiry=license_expiry,
             passport_number=passport_number,
+            license_photo_url=license_photo_url,
+            passport_photo_url=passport_photo_url,
+            driver_photo_url=driver_photo_url,
             registered_by=registered_by,
             status=DriverStatus.PENDING,
             is_verified=False
@@ -69,7 +75,8 @@ class DriverRepository:
             license_plate=vehicle_data.license_plate,
             vin=vehicle_data.vin,
             seats=vehicle_data.seats,
-            vehicle_type=vehicle_data.vehicle_type
+            vehicle_type=vehicle_data.vehicle_type,
+            vehicle_photo_url=vehicle_data.vehicle_photo_url
         )
         self.db.add(vehicle)
         

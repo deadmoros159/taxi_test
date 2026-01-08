@@ -19,6 +19,13 @@ class UserRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_email(self, email: str) -> Optional[User]:
+        """Получить пользователя по email"""
+        from sqlalchemy.future import select
+        stmt = select(User).where(User.email == email)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_id(self, user_id: int) -> Optional[User]:
         """Получить пользователя по ID"""
         from sqlalchemy.future import select
@@ -26,17 +33,23 @@ class UserRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create_user(self, phone_number: str, full_name: str, **kwargs) -> User:
+    async def create_user(self, phone_number: str = None, email: str = None, full_name: str = None, **kwargs) -> User:
         """Создать нового пользователя с именем"""
-        user = User(
-            phone_number=phone_number,
-            full_name=full_name,  # Теперь обязательный параметр
+        user_data = {
+            "full_name": full_name or "User",  # Обязательный параметр
             **kwargs
-        )
+        }
+        if phone_number:
+            user_data["phone_number"] = phone_number
+        if email:
+            user_data["email"] = email
+        
+        user = User(**user_data)
         self.db.add(user)
         await self.db.commit()
         await self.db.refresh(user)
-        logger.info(f"User created: {user.id} - {phone_number}")
+        identifier = phone_number or email or f"ID:{user.id}"
+        logger.info(f"User created: {user.id} - {identifier}")
         return user
 
     async def update_user(self, user_id: int, **kwargs) -> Optional[User]:

@@ -26,6 +26,11 @@ class Driver(Base):
     license_expiry = Column(DateTime(timezone=True), nullable=False)
     passport_number = Column(String, nullable=False)
     
+    # Фото документов (URL или путь к файлу)
+    license_photo_url = Column(String, nullable=True)  # Фото водительских прав
+    passport_photo_url = Column(String, nullable=True)  # Фото паспорта
+    driver_photo_url = Column(String, nullable=True)  # Фото водителя
+    
     # Статус
     status = Column(SQLEnum(DriverStatus), default=DriverStatus.PENDING, nullable=False, index=True)
     is_verified = Column(Boolean, default=False)  # Проверен ли диспетчером
@@ -60,6 +65,9 @@ class Vehicle(Base):
     # Технические характеристики
     seats = Column(Integer, default=4, nullable=False)  # Количество мест
     vehicle_type = Column(String, nullable=False)  # Тип (sedan, suv, minivan и т.д.)
+    
+    # Фото автомобиля
+    vehicle_photo_url = Column(String, nullable=True)  # Фото автомобиля
     
     # Метаданные
     created_at = Column(DateTime(timezone=True), server_default=func.now())

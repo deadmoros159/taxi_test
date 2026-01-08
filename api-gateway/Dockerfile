@@ -1,4 +1,5 @@
 FROM ubuntu:latest
 LABEL authors="rustam"
 
-ENTRYPOINT ["top", "-b"]
+# Запускаем sleep чтобы контейнер не завершался, но не выводим логи
+ENTRYPOINT ["sleep", "infinity"]

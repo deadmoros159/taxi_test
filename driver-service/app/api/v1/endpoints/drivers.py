@@ -162,7 +162,10 @@ async def register_driver(
         license_expiry=request.license_expiry,
         passport_number=request.passport_number,
         registered_by=dispatcher_id,
-        vehicle_data=request.vehicle
+        vehicle_data=request.vehicle,
+        license_photo_url=request.license_photo_url,
+        passport_photo_url=request.passport_photo_url,
+        driver_photo_url=request.driver_photo_url
     )
     
     # Логируем, что нужно обновить роль в auth-service
@@ -197,21 +200,44 @@ async def get_all_drivers(
     driver_repo = DriverRepository(db)
     drivers = await driver_repo.get_all()
     
-    return [
-        DriverResponse(
+    from app.schemas.driver import VehicleResponse
+    
+    result = []
+    for driver in drivers:
+        vehicle_response = None
+        if driver.vehicle:
+            vehicle_response = VehicleResponse(
+                id=driver.vehicle.id,
+                brand=driver.vehicle.brand,
+                model=driver.vehicle.model,
+                year=driver.vehicle.year,
+                color=driver.vehicle.color,
+                license_plate=driver.vehicle.license_plate,
+                vin=driver.vehicle.vin,
+                seats=driver.vehicle.seats,
+                vehicle_type=driver.vehicle.vehicle_type,
+                vehicle_photo_url=driver.vehicle.vehicle_photo_url,
+                created_at=driver.vehicle.created_at,
+                updated_at=driver.vehicle.updated_at
+            )
+        
+        result.append(DriverResponse(
             id=driver.id,
             user_id=driver.user_id,
             license_number=driver.license_number,
             license_expiry=driver.license_expiry,
             passport_number=driver.passport_number,
+            license_photo_url=driver.license_photo_url,
+            passport_photo_url=driver.passport_photo_url,
+            driver_photo_url=driver.driver_photo_url,
             status=driver.status.value,
             is_verified=driver.is_verified,
             registered_by=driver.registered_by,
             registered_at=driver.registered_at,
-            vehicle=driver.vehicle
-        )
-        for driver in drivers
-    ]
+            vehicle=vehicle_response
+        ))
+    
+    return result
 
 
 @router.get("/drivers/me", response_model=DriverResponse)
@@ -265,15 +291,37 @@ async def update_driver_status(
     
     updated_driver = await driver_repo.update_status(driver_id, status_update.status)
     
+    from app.schemas.driver import VehicleResponse
+    
+    vehicle_response = None
+    if updated_driver.vehicle:
+        vehicle_response = VehicleResponse(
+            id=updated_driver.vehicle.id,
+            brand=updated_driver.vehicle.brand,
+            model=updated_driver.vehicle.model,
+            year=updated_driver.vehicle.year,
+            color=updated_driver.vehicle.color,
+            license_plate=updated_driver.vehicle.license_plate,
+            vin=updated_driver.vehicle.vin,
+            seats=updated_driver.vehicle.seats,
+            vehicle_type=updated_driver.vehicle.vehicle_type,
+            vehicle_photo_url=updated_driver.vehicle.vehicle_photo_url,
+            created_at=updated_driver.vehicle.created_at,
+            updated_at=updated_driver.vehicle.updated_at
+        )
+    
     return DriverResponse(
         id=updated_driver.id,
         user_id=updated_driver.user_id,
         license_number=updated_driver.license_number,
         license_expiry=updated_driver.license_expiry,
         passport_number=updated_driver.passport_number,
+        license_photo_url=updated_driver.license_photo_url,
+        passport_photo_url=updated_driver.passport_photo_url,
+        driver_photo_url=updated_driver.driver_photo_url,
         status=updated_driver.status.value,
         is_verified=updated_driver.is_verified,
         registered_by=updated_driver.registered_by,
         registered_at=updated_driver.registered_at,
-        vehicle=updated_driver.vehicle
+        vehicle=vehicle_response
     )

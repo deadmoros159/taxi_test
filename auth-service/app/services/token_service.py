@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, Any
 from jose import JWTError, jwt
 import uuid
+from pydantic import SecretStr
 
 from app.core.config import settings
 
@@ -13,21 +14,33 @@ class TokenService:
     """Сервис для работы с JWT токенами"""
 
     def __init__(self):
-        self.access_secret = settings.JWT_SECRET_KEY
-        self.refresh_secret = settings.JWT_REFRESH_SECRET_KEY
+        # Получаем секретные ключи, конвертируя SecretStr в строку
+        # Всегда используем get_secret_value, так как JWT_SECRET_KEY всегда SecretStr
+        try:
+            self.access_secret = settings.JWT_SECRET_KEY.get_secret_value()
+        except (AttributeError, TypeError):
+            # Fallback на str если get_secret_value недоступен
+            self.access_secret = str(settings.JWT_SECRET_KEY)
+        
+        try:
+            self.refresh_secret = settings.JWT_REFRESH_SECRET_KEY.get_secret_value()
+        except (AttributeError, TypeError):
+            # Fallback на str если get_secret_value недоступен
+            self.refresh_secret = str(settings.JWT_REFRESH_SECRET_KEY)
         self.algorithm = settings.ALGORITHM
         self.access_token_expire = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         self.refresh_token_expire = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
-    def create_access_token(self, user_id: int, phone_number: str, full_name: str = None, role: str = None) -> str:
+    def create_access_token(self, user_id: int, phone_number: str = None, full_name: str = None, role: str = None, email: str = None) -> str:
         """
         Создание access токена
 
         Args:
             user_id: ID пользователя
-            phone_number: Номер телефона
+            phone_number: Номер телефона (опционально)
             full_name: Полное имя пользователя (опционально)
             role: Роль пользователя (опционально)
+            email: Email адрес (опционально)
 
         Returns:
             Access токен в виде строки
@@ -39,12 +52,19 @@ class TokenService:
             # Базовые данные
             payload = {
                 "sub": str(user_id),
-                "phone": phone_number,
                 "type": "access",
                 "exp": expire_time,
                 "iat": datetime.utcnow(),
                 "jti": token_id,
             }
+
+            # Добавляем телефон если есть
+            if phone_number:
+                payload["phone"] = phone_number
+            
+            # Добавляем email если есть
+            if email:
+                payload["email"] = email
 
             # Добавляем имя если есть
             if full_name:
@@ -103,21 +123,22 @@ class TokenService:
             logger.error(f"Error creating refresh token: {e}")
             raise
 
-    def create_tokens(self, user_id: int, phone_number: str, full_name: str = None, role: str = None) -> Tuple[str, str, str, datetime]:
+    def create_tokens(self, user_id: int, phone_number: str = None, full_name: str = None, role: str = None, email: str = None) -> Tuple[str, str, str, datetime]:
         """
         Создание пары токенов (access + refresh)
 
         Args:
             user_id: ID пользователя
-            phone_number: Номер телефона
+            phone_number: Номер телефона (опционально)
             full_name: Полное имя пользователя (опционально)
             role: Роль пользователя (опционально)
+            email: Email адрес (опционально)
 
         Returns:
             Tuple(access_token, refresh_token, token_id, expires_at)
         """
         try:
-            access_token = self.create_access_token(user_id, phone_number, full_name, role)
+            access_token = self.create_access_token(user_id, phone_number, full_name, role, email)
             refresh_token, token_id, expires_at = self.create_refresh_token(user_id)
 
             logger.info(f"Token pair created for user {user_id}")

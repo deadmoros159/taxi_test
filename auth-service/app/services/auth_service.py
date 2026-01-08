@@ -8,6 +8,7 @@ from app.repositories.user_repository import UserRepository
 from app.repositories.token_repository import TokenRepository
 from app.services.token_service import token_service
 from app.services.sms_service import sms_service
+from app.services.email_service import email_service
 
 logger = logging.getLogger(__name__)
 
@@ -329,4 +330,123 @@ class AuthService:
 
         except Exception as e:
             logger.error(f"Error validating access token: {e}")
+            return None
+
+    async def request_email_code(self, email: str, full_name: str) -> bool:
+        """
+        Запрос отправки кода на email
+
+        Args:
+            email: Email адрес
+            full_name: Полное имя пользователя
+
+        Returns:
+            bool: Успешно ли отправлен код
+        """
+        try:
+            logger.info(f"Requesting email code for: {email}, name: {full_name}")
+
+            # Отправляем код на email
+            success, _ = await email_service.send_email(email)
+
+            if success:
+                # Находим или создаем пользователя с email (но не активируем пока)
+                user = await self.user_repo.get_by_email(email)
+                if not user:
+                    # Создаем нового пользователя с email
+                    user = await self.user_repo.create_user(
+                        email=email,
+                        full_name=full_name,
+                        is_verified=False,
+                        is_active=False  # Активируем только после верификации кода
+                    )
+                    logger.info(f"New user created: {user.id} - {full_name}")
+                else:
+                    # Обновляем имя если оно изменилось
+                    if user.full_name != full_name:
+                        await self.user_repo.update_user(user.id, full_name=full_name)
+                        logger.info(f"User name updated: {user.id} - {full_name}")
+                    else:
+                        logger.info(f"Existing user found: {user.id}")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error requesting email code: {e}", exc_info=True)
+            return False
+
+    async def verify_email_code(
+            self,
+            email: str,
+            code: str
+    ) -> Optional[Tuple[str, str, int]]:
+        """
+        Проверка кода из email и выдача JWT токенов
+
+        Args:
+            email: Email адрес
+            code: Код подтверждения из email
+
+        Returns:
+            Tuple[access_token, refresh_token, user_id] или None если ошибка
+        """
+        try:
+            logger.info(f"Verifying email code for: {email}")
+
+            # Проверяем код через email сервис
+            verification_success, email_data = await email_service.verify_code(email, code)
+
+            if not verification_success:
+                logger.warning(f"Email code verification failed for: {email}")
+                return None
+
+            # Получаем пользователя по email
+            user = await self.user_repo.get_by_email(email)
+
+            if not user:
+                # Если пользователь не найден, значит он не прошел request-code
+                logger.warning(f"User not found for email: {email}. User must request code first.")
+                return None
+
+            # Активируем и верифицируем пользователя после успешной проверки кода
+            if not user.is_verified:
+                await self.user_repo.update_user(
+                    user.id,
+                    is_verified=True,
+                    is_active=True
+                )
+                logger.info(f"User activated and verified: {user.id}")
+
+            # Создаем JWT токены (включая роль)
+            tokens = token_service.create_tokens(
+                user_id=user.id,
+                phone_number=user.phone_number,
+                full_name=user.full_name,
+                role=user.role,
+                email=user.email
+            )
+
+            if not tokens:
+                logger.error(f"Failed to create tokens for user: {user.id}")
+                return None
+
+            access_token, refresh_token, refresh_token_id, expires_at = tokens
+
+            # Сохраняем refresh token в базу
+            token_saved = await self.token_repo.create_refresh_token(
+                user_id=user.id,
+                token=refresh_token_id,
+                expires_at=expires_at
+            )
+
+            if not token_saved:
+                logger.error(f"Failed to save refresh token for user: {user.id}")
+                return None
+
+            logger.info(f"User authenticated successfully via email: {user.id}")
+
+            return access_token, refresh_token, user.id
+
+        except Exception as e:
+            logger.error(f"Error verifying email code: {e}", exc_info=True)
             return None

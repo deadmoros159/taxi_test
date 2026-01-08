@@ -14,6 +14,7 @@ class VehicleCreate(BaseModel):
     vin: Optional[str] = Field(None, max_length=17)
     seats: int = Field(4, ge=2, le=20)
     vehicle_type: str = Field(..., min_length=1, max_length=30)
+    vehicle_photo_url: Optional[str] = Field(None, description="URL фото автомобиля")
 
 
 class DriverRegisterRequest(BaseModel):
@@ -22,6 +23,9 @@ class DriverRegisterRequest(BaseModel):
     license_number: str = Field(..., min_length=1, max_length=50)
     license_expiry: datetime
     passport_number: str = Field(..., min_length=1, max_length=50)
+    license_photo_url: Optional[str] = Field(None, description="URL фото водительских прав")
+    passport_photo_url: Optional[str] = Field(None, description="URL фото паспорта")
+    driver_photo_url: Optional[str] = Field(None, description="URL фото водителя")
     vehicle: VehicleCreate
 
 
@@ -36,6 +40,7 @@ class VehicleResponse(BaseModel):
     vin: Optional[str]
     seats: int
     vehicle_type: str
+    vehicle_photo_url: Optional[str]
     created_at: datetime
     updated_at: Optional[datetime]
 
@@ -50,6 +55,9 @@ class DriverResponse(BaseModel):
     license_number: str
     license_expiry: datetime
     passport_number: str
+    license_photo_url: Optional[str]
+    passport_photo_url: Optional[str]
+    driver_photo_url: Optional[str]
     status: str
     is_verified: bool
     registered_by: Optional[int]

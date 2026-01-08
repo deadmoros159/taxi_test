@@ -1,0 +1,115 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import logging
+import structlog
+
+from app.core.config import settings
+from app.core.database import engine, Base, check_db_connection
+from app.api.v1.endpoints import orders
+
+# Настройка логирования
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.JSONRenderer() if settings.DEBUG else structlog.dev.ConsoleRenderer(),
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan для управления ресурсами"""
+    # Startup
+    logger.info("Starting Order Service", version=settings.VERSION, env=settings.ENVIRONMENT)
+
+    # Создаем таблицы из моделей (проще и надежнее чем миграции для начала)
+    logger.info("Creating database tables from models")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.warning(f"Failed to create tables from models: {e}")
+        # Не падаем, возможно таблицы уже существуют
+        if settings.ENVIRONMENT != "development":
+            logger.error("Failed to create tables in production mode")
+            # В production можно продолжить, если таблицы уже есть
+
+    # Проверяем подключения
+    db_ok = await check_db_connection()
+    if not db_ok:
+        logger.error("Failed to connect to database")
+        if settings.ENVIRONMENT != "development":
+            raise RuntimeError("Database connection failed")
+
+    logger.info("Service started successfully")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down Order Service")
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan,
+)
+
+# Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Подключаем роутеры
+app.include_router(orders.router, prefix=f"{settings.API_V1_PREFIX}/orders", tags=["orders"])
+
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check для Kubernetes и load balancers"""
+    db_ok = await check_db_connection()
+
+    if not db_ok:
+        return {
+            "status": "unhealthy",
+            "database": "unavailable"
+        }
+
+    return {
+        "status": "healthy",
+        "version": settings.VERSION,
+        "environment": settings.ENVIRONMENT,
+        "database": "connected",
+    }
+
+
+@app.get("/")
+async def root():
+    return {
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "docs": "/docs" if settings.DEBUG else None,
+        "health": "/health",
+    }
+

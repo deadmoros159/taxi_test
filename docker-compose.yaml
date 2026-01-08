@@ -71,31 +71,71 @@ services:
       - taxi-network
 
   # ==================== ORDER SERVICE ====================
-  # order-service:
-  #   build:
-  #     context: ./order_service
-  #     dockerfile: Dockerfile
-  #   container_name: taxi-order-service
-  #   ports:
-  #     - "8002:8002"
-  #   environment:
-  #     - ENVIRONMENT=production
-  #     - DEBUG=false
-  #     - AUTH_SERVICE_URL=http://auth-service:8000
-  #     - DRIVER_SERVICE_URL=http://driver-service:8001
-  #   depends_on:
-  #     auth-service:
-  #       condition: service_healthy
-  #     driver-service:
-  #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #   restart: unless-stopped
-  #   networks:
-  #     - taxi-network
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: taxi-order-service
+    ports:
+      - "8002:8002"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - POSTGRES_SERVER=postgres-order
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=order_db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres-order:5432/order_db
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - DRIVER_SERVICE_URL=http://driver-service:8001
+    depends_on:
+      postgres-order:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      driver-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== ADMIN SERVICE ====================
+  admin-service:
+    build:
+      context: ./admin-service
+      dockerfile: Dockerfile
+    container_name: taxi-admin-service
+    ports:
+      - "8003:8003"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - DRIVER_SERVICE_URL=http://driver-service:8001
+      - ORDER_SERVICE_URL=http://order-service:8002
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      driver-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network
 
   # ==================== API GATEWAY ====================
   api-gateway:
@@ -108,11 +148,13 @@ services:
     environment:
       - AUTH_SERVICE_URL=http://auth-service:8000
       - DRIVER_SERVICE_URL=http://driver-service:8001
-      # - ORDER_SERVICE_URL=http://order-service:8002
+      - ORDER_SERVICE_URL=http://order-service:8002
+      - ADMIN_SERVICE_URL=http://admin-service:8003
     depends_on:
       - auth-service
       - driver-service
-      # - order-service
+      - order-service
+      - admin-service
     restart: unless-stopped
     networks:
       - taxi-network
@@ -146,6 +188,24 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres_driver_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  postgres-order:
+    image: postgres:15-alpine
+    container_name: taxi-postgres-order
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_order_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -201,6 +261,7 @@ services:
 volumes:
   postgres_auth_data:
   postgres_driver_data:
+  postgres_order_data:
   redis_data:
 
 networks:

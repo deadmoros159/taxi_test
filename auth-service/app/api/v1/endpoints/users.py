@@ -29,7 +29,8 @@ class UserResponse(BaseModel):
     """Ответ с информацией о пользователе"""
     id: int
     full_name: str
-    phone_number: str
+    phone_number: str | None = None
+    email: str | None = None
     role: str
     is_active: bool
     is_verified: bool
@@ -47,6 +48,7 @@ async def get_current_user_info(
         id=current_user.id,
         full_name=current_user.full_name,
         phone_number=current_user.phone_number,
+        email=current_user.email,
         role=current_user.role,
         is_active=current_user.is_active,
         is_verified=current_user.is_verified
@@ -85,6 +87,7 @@ async def update_user_role(
         id=updated_user.id,
         full_name=updated_user.full_name,
         phone_number=updated_user.phone_number,
+        email=updated_user.email,
         role=updated_user.role,
         is_active=updated_user.is_active,
         is_verified=updated_user.is_verified
@@ -119,6 +122,42 @@ async def register_dispatcher(
         id=updated_user.id,
         full_name=updated_user.full_name,
         phone_number=updated_user.phone_number,
+        email=updated_user.email,
+        role=updated_user.role,
+        is_active=updated_user.is_active,
+        is_verified=updated_user.is_verified
+    )
+
+
+@router.post("/users/{user_id}/register-admin", response_model=UserResponse)
+async def register_admin(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Зарегистрировать пользователя как админа (только для существующих админов)
+    """
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Назначаем роль админа
+    updated_user = await user_repo.update_user(
+        user_id,
+        role=UserRole.ADMIN.value
+    )
+    
+    return UserResponse(
+        id=updated_user.id,
+        full_name=updated_user.full_name,
+        phone_number=updated_user.phone_number,
+        email=updated_user.email,
         role=updated_user.role,
         is_active=updated_user.is_active,
         is_verified=updated_user.is_verified
@@ -148,6 +187,7 @@ async def activate_user(
         id=user.id,
         full_name=user.full_name,
         phone_number=user.phone_number,
+        email=user.email,
         role=user.role,
         is_active=user.is_active,
         is_verified=user.is_verified
@@ -177,6 +217,7 @@ async def deactivate_user(
         id=user.id,
         full_name=user.full_name,
         phone_number=user.phone_number,
+        email=user.email,
         role=user.role,
         is_active=user.is_active,
         is_verified=user.is_verified

@@ -7,6 +7,7 @@ import structlog
 from app.core.config import settings
 from app.core.database import engine, Base, check_db_connection
 from app.api.v1.endpoints import orders
+from sqlalchemy import text
 
 # Настройка логирования
 structlog.configure(
@@ -37,15 +38,32 @@ async def lifespan(app: FastAPI):
     # Создаем таблицы из моделей (проще и надежнее чем миграции для начала)
     logger.info("Creating database tables from models")
     try:
+        # Сначала создаем enum, если его нет
         async with engine.begin() as conn:
+            # Проверяем и создаем enum для статусов заказов
+            await conn.execute(
+                text("""
+                DO $$ BEGIN
+                    CREATE TYPE orderstatus AS ENUM ('pending', 'accepted', 'driver_arrived', 'in_progress', 'completed', 'cancelled', 'cancelled_by_driver', 'cancelled_by_passenger');
+                EXCEPTION
+                    WHEN duplicate_object THEN null;
+                END $$;
+                """)
+            )
+            # Затем создаем таблицы
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables created successfully")
     except Exception as e:
-        logger.warning(f"Failed to create tables from models: {e}")
-        # Не падаем, возможно таблицы уже существуют
-        if settings.ENVIRONMENT != "development":
-            logger.error("Failed to create tables in production mode")
-            # В production можно продолжить, если таблицы уже есть
+        error_str = str(e).lower()
+        # Игнорируем ошибки о существующих объектах
+        if "already exists" in error_str or "duplicate" in error_str:
+            logger.info("Database objects already exist, skipping creation")
+        else:
+            logger.warning(f"Failed to create tables from models: {e}")
+            # Не падаем, возможно таблицы уже существуют
+            if settings.ENVIRONMENT != "development":
+                logger.error("Failed to create tables in production mode")
+                # В production можно продолжить, если таблицы уже есть
 
     # Проверяем подключения
     db_ok = await check_db_connection()

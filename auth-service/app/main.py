@@ -58,15 +58,24 @@ async def run_migrations():
             if result.stdout:
                 logger.debug("Migration output", output=result.stdout)
         else:
-            logger.error(
-                "Migration failed",
-                stdout=result.stdout,
-                stderr=result.stderr,
-                returncode=result.returncode
-            )
-            # В production это критическая ошибка
-            if settings.ENVIRONMENT != "development":
-                raise RuntimeError(f"Migration failed: {result.stderr}")
+            # Проверяем, не связана ли ошибка с уже существующими объектами
+            error_text = result.stderr.lower() if result.stderr else ""
+            if "already exists" in error_text or "duplicate" in error_text:
+                logger.warning(
+                    "Migration objects already exist, skipping",
+                    stderr=result.stderr
+                )
+                # Это не критично - объекты уже созданы
+            else:
+                logger.error(
+                    "Migration failed",
+                    stdout=result.stdout,
+                    stderr=result.stderr,
+                    returncode=result.returncode
+                )
+                # В production это критическая ошибка только если не "already exists"
+                if settings.ENVIRONMENT != "development":
+                    raise RuntimeError(f"Migration failed: {result.stderr}")
     except subprocess.TimeoutExpired:
         logger.error("Migration timeout - migrations took too long")
         if settings.ENVIRONMENT != "development":

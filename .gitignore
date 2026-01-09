@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Environment variables
+**/.env
+**/.env.prod
+**/.env.dev
+.env.local
+.env.*.local
+
+# SSL certificates
+deploy/ssl/*.key
+deploy/ssl/*.crt
+deploy/ssl/*.pem
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid
+*.seed
+*.pid.lockenv

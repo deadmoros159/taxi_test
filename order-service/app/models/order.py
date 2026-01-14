@@ -60,3 +60,4 @@ class Order(Base):
     # Связь с долгами
     debts = relationship("DriverDebt", back_populates="order", cascade="all, delete-orphan")
 
+

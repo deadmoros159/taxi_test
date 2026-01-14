@@ -113,3 +113,4 @@ cd /opt/taxi/deploy
 docker ps
 ```
 
+

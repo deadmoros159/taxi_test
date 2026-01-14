@@ -74,3 +74,4 @@ def downgrade() -> None:
     # Удаляем таблицу users
     op.drop_table('users')
 
+

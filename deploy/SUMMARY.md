@@ -168,3 +168,4 @@ docker logs taxi-driver-service-prod
 3. Статус сервисов: `docker ps`
 4. Использование ресурсов: `docker stats`
 
+

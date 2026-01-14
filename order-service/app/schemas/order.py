@@ -60,3 +60,4 @@ class OrderAccept(BaseModel):
     driver_location_lat: float = Field(..., description="Текущая широта водителя")
     driver_location_lng: float = Field(..., description="Текущая долгота водителя")
 
+

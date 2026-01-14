@@ -203,3 +203,4 @@ openssl s_client -connect xhap.ru:443 -servername xhap.ru < /dev/null
 3. Проверьте логи в панели управления DNS
 4. Обратитесь в поддержку вашего регистратора домена
 
+

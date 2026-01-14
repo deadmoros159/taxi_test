@@ -52,3 +52,4 @@ echo "  1. Настройте SSL сертификаты: /opt/taxi/deploy/ssl/"
 echo "  2. Настройте переменные окружения: /opt/taxi/deploy/env/.env.prod"
 echo "  3. Запустите деплой: cd /opt/taxi/deploy && ./deploy.sh prod start"
 
+

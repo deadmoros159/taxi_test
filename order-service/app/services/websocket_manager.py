@@ -131,3 +131,4 @@ class WebSocketManager:
 # Глобальный экземпляр менеджера
 websocket_manager = WebSocketManager()
 
+

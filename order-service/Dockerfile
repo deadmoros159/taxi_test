@@ -48,3 +48,4 @@ CMD ["gunicorn", \
     "--error-logfile", "-", \
     "app.main:app"]
 
+

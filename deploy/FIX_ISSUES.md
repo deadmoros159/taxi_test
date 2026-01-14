@@ -57,3 +57,4 @@ curl -k https://xhap.ru/auth/health
 2. **order-service**: Добавлена проверка существования enum перед созданием
 3. **docker-compose**: Убрано предупреждение о `version`
 
+

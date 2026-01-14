@@ -32,3 +32,4 @@ scrape_configs:
       - targets: ['admin-service:8003']
     metrics_path: '/metrics'
 
+

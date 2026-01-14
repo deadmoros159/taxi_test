@@ -35,3 +35,4 @@ class DriverDebt(Base):
     # Связь с заказом
     order = relationship("Order", back_populates="debts")
 
+

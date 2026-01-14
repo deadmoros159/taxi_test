@@ -100,3 +100,4 @@ class AggregationService:
                 logger.error(f"Error fetching order details: {e}")
                 return None
 
+

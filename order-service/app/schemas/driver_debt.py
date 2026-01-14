@@ -30,3 +30,4 @@ class DriverDebtCreate(BaseModel):
     amount: float
     due_date: datetime
 
+

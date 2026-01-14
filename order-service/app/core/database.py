@@ -53,3 +53,4 @@ async def check_db_connection() -> bool:
         logger.error(f"Database connection error: {e}")
         return False
 
+

@@ -49,3 +49,4 @@ echo "Для применения изменений:"
 echo "  cd /opt/taxi/deploy"
 echo "  ./deploy.sh $ENV restart"
 
+

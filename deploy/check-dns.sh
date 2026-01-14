@@ -48,3 +48,4 @@ echo "  - https://www.whatsmydns.net/#A/$DOMAIN"
 echo ""
 echo "💡 Если DNS не настроен, см. инструкцию в DNS_SETUP.md"
 
+

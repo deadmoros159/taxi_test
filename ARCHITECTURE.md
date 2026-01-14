@@ -188,3 +188,4 @@ Order Service
 - Rate limiting в auth-service
 - CORS настройки для каждого сервиса
 
+

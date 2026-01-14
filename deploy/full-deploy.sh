@@ -96,3 +96,4 @@ echo ""
 echo "Проверка статуса:"
 docker ps --filter "name=taxi-${ENV}"
 
+

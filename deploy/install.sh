@@ -114,3 +114,4 @@ echo "Следующие шаги:"
 echo "  1. Настройте переменные окружения в deploy/env/.env.prod"
 echo "  2. Запустите ./deploy/deploy.sh prod"
 
+

@@ -47,3 +47,4 @@ deploy/
 3. Настройте переменные окружения в `deploy/env/.env.prod`
 4. Запустите `./deploy/deploy.sh prod`
 
+

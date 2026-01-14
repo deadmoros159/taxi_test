@@ -146,6 +146,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
+    root_path=settings.ROOT_PATH,  # Префикс пути для работы за прокси
     lifespan=lifespan,
 )
 

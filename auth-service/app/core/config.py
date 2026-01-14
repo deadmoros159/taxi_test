@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "Taxi Auth Service"
     VERSION: str = "1.0.0"
+    ROOT_PATH: str = ""  # Префикс пути для работы за прокси (например, /auth)
 
     # Security
     SECRET_KEY: SecretStr = Field(

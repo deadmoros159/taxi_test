@@ -11,6 +11,7 @@ services:
       - ENVIRONMENT=production
       - DEBUG=false
       - RUN_MIGRATIONS=true
+      - ROOT_PATH=/auth
       - POSTGRES_SERVER=postgres-auth
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -51,6 +52,7 @@ services:
     environment:
       - ENVIRONMENT=production
       - DEBUG=false
+      - ROOT_PATH=/driver
       - POSTGRES_SERVER=postgres-driver
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -86,6 +88,7 @@ services:
     environment:
       - ENVIRONMENT=production
       - DEBUG=false
+      - ROOT_PATH=/order
       - POSTGRES_SERVER=postgres-order
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -124,6 +127,7 @@ services:
     environment:
       - ENVIRONMENT=production
       - DEBUG=false
+      - ROOT_PATH=/admin
       - AUTH_SERVICE_URL=http://auth-service:8000
       - DRIVER_SERVICE_URL=http://driver-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002

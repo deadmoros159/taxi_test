@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "Admin Service"
     VERSION: str = "1.0.0"
+    ROOT_PATH: str = ""  # Префикс пути для работы за прокси (например, /admin)
 
     # External Services
     AUTH_SERVICE_URL: str = Field(

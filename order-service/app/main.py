@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import logging
 import structlog
 
@@ -107,20 +108,33 @@ app.include_router(orders.router, prefix=f"{settings.API_V1_PREFIX}/orders", tag
 @app.get("/health")
 async def health_check():
     """Health check для Kubernetes и load balancers"""
-    db_ok = await check_db_connection()
+    try:
+        db_ok = await check_db_connection()
+        
+        if not db_ok:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "database": "unavailable"
+                }
+            )
 
-    if not db_ok:
         return {
-            "status": "unhealthy",
-            "database": "unavailable"
+            "status": "healthy",
+            "version": settings.VERSION,
+            "environment": settings.ENVIRONMENT,
+            "database": "connected",
         }
-
-    return {
-        "status": "healthy",
-        "version": settings.VERSION,
-        "environment": settings.ENVIRONMENT,
-        "database": "connected",
-    }
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "error": str(e)
+            }
+        )
 
 
 @app.get("/")

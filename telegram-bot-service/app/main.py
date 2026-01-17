@@ -113,7 +113,7 @@ def create_fastapi_app() -> FastAPI:
         openapi_url="/openapi.json",
         docs_url="/docs",
         redoc_url="/redoc",
-        root_path="",  # Nginx делает rewrite, поэтому префикс не нужен
+        root_path="/telegram",  # Префикс для работы через Nginx
         lifespan=lifespan,
     )
     

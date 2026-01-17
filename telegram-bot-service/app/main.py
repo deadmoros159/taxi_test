@@ -159,8 +159,8 @@ def create_fastapi_app() -> FastAPI:
         try:
             from aiogram.types import Update
             update = Update(**body)
-            # В aiogram 3.x используем process_update для обработки webhook
-            await dp.process_update(update)
+            # В aiogram 3.4.1 используем feed_update для обработки webhook
+            await dp.feed_update(bot, update)
             return {"ok": True}
         except Exception as e:
             logger.error(f"Error processing webhook update: {e}", exc_info=True)

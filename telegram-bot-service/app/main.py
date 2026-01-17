@@ -4,7 +4,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 # aiogram 3.4.1 не имеет webhook.fastapi, используем aiohttp интеграцию
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -126,53 +126,50 @@ def create_fastapi_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Регистрируем webhook handler через ASGI middleware
-    # (бот и диспетчер будут созданы в lifespan)
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import Response
-    from aiohttp import web as aiohttp_web
-    from aiogram.webhook.aiohttp_server import SimpleRequestHandler as AiohttpSimpleRequestHandler
-    
-    async def webhook_middleware(request: Request, call_next):
-        """Middleware для обработки webhook запросов"""
+    # Webhook endpoint для обработки запросов от Telegram
+    @app.post(settings.WEBHOOK_PATH)
+    async def webhook_endpoint(request: Request):
+        """Endpoint для обработки webhook запросов от Telegram"""
         global bot, dp
         
-        # Если это webhook запрос, обрабатываем его через aiohttp handler
-        if request.url.path == settings.WEBHOOK_PATH:
-            if bot and dp:
-                # Создаем aiohttp request из starlette request
-                secret_token = settings.WEBHOOK_SECRET.get_secret_value() if settings.WEBHOOK_SECRET else None
-                handler = AiohttpSimpleRequestHandler(
-                    dispatcher=dp,
-                    bot=bot,
-                    secret_token=secret_token,
-                )
-                
-                # Конвертируем Starlette request в aiohttp request
-                body = await request.body()
-                aiohttp_request = aiohttp_web.Request(
-                    method=request.method,
-                    path=request.url.path,
-                    headers=dict(request.headers),
-                    payload=body,
-                )
-                
-                # Обрабатываем через aiohttp handler
-                aiohttp_response = await handler.handle_request(aiohttp_request)
-                
-                # Конвертируем aiohttp response в Starlette response
-                response_body = await aiohttp_response.read()
-                return Response(
-                    content=response_body,
-                    status_code=aiohttp_response.status,
-                    headers=dict(aiohttp_response.headers),
+        if not bot or not dp:
+            from fastapi import status
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"detail": "Bot not initialized"}
+            )
+        
+        # Проверяем secret token если он установлен
+        if settings.WEBHOOK_SECRET:
+            secret_token = settings.WEBHOOK_SECRET.get_secret_value()
+            received_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+            if received_token != secret_token:
+                from fastapi import status
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={"detail": "Invalid secret token"}
                 )
         
-        # Для остальных запросов используем обычную обработку
-        return await call_next(request)
-    
-    app.add_middleware(BaseHTTPMiddleware, dispatch=webhook_middleware)
+        # Получаем тело запроса
+        body = await request.json()
+        
+        # Обрабатываем через диспетчер aiogram
+        try:
+            from aiogram.types import Update
+            update = Update(**body)
+            # В aiogram 3.x используем process_update для обработки webhook
+            await dp.process_update(update)
+            return {"ok": True}
+        except Exception as e:
+            logger.error(f"Error processing webhook update: {e}", exc_info=True)
+            from fastapi import status
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"detail": "Error processing update"}
+            )
     
     # Health check endpoint
     @app.get("/health")

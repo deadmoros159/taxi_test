@@ -11,7 +11,12 @@ class AuthClient:
 
     def __init__(self):
         self.base_url = settings.AUTH_SERVICE_URL
-        self.client = httpx.AsyncClient(timeout=30.0)
+        # Настройки клиента для лучшей работы в Docker сети
+        self.client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            follow_redirects=True
+        )
 
     async def authorize_via_telegram(
         self,
@@ -34,6 +39,7 @@ class AuthClient:
         """
         try:
             url = f"{self.base_url}/api/v1/auth/telegram/authorize"
+            logger.info(f"Attempting to authorize via Telegram, URL: {url}, base_url: {self.base_url}")
 
             payload = {
                 "phone_number": phone_number,
@@ -42,6 +48,7 @@ class AuthClient:
                 "telegram_username": telegram_username
             }
 
+            logger.debug(f"Sending request to {url} with payload: {payload}")
             response = await self.client.post(url, json=payload)
 
             if response.status_code == 200:
@@ -56,11 +63,14 @@ class AuthClient:
                 )
                 return None
 
-        except httpx.TimeoutException:
-            logger.error(f"Timeout connecting to auth-service: {self.base_url}")
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout connecting to auth-service: {self.base_url}, error: {e}")
+            return None
+        except httpx.ConnectError as e:
+            logger.error(f"Connection error to auth-service: {self.base_url}, error: {e}, URL was: {url if 'url' in locals() else 'unknown'}")
             return None
         except Exception as e:
-            logger.error(f"Error authorizing via Telegram: {e}", exc_info=True)
+            logger.error(f"Error authorizing via Telegram: {e}, base_url: {self.base_url}, URL was: {url if 'url' in locals() else 'unknown'}", exc_info=True)
             return None
 
     async def close(self):

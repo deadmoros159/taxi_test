@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, DateTime
 from sqlalchemy.sql import func
 from app.core.database import Base
 from app.models.role import UserRole
@@ -14,6 +14,8 @@ class User(Base):
     role = Column(String, default=UserRole.PASSENGER.value, nullable=False, index=True)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
+    telegram_user_id = Column(BigInteger, unique=True, index=True, nullable=True)  # ID пользователя в Telegram (может быть больше int32)
+    telegram_username = Column(String, nullable=True)  # Username в Telegram
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

@@ -33,6 +33,13 @@ class UserRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_telegram_user_id(self, telegram_user_id: int) -> Optional[User]:
+        """Получить пользователя по Telegram user ID"""
+        from sqlalchemy.future import select
+        stmt = select(User).where(User.telegram_user_id == telegram_user_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def create_user(self, phone_number: str = None, email: str = None, full_name: str = None, **kwargs) -> User:
         """Создать нового пользователя с именем"""
         user_data = {

@@ -250,9 +250,10 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # Подключаем роутеры
 app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["auth"])
-# Подключаем подроутеры для phone и email
+# Подключаем подроутеры для phone, email и telegram
 app.include_router(auth.phone_router, prefix=f"{settings.API_V1_PREFIX}/auth/phone", tags=["phone-auth"])
 app.include_router(auth.email_router, prefix=f"{settings.API_V1_PREFIX}/auth/email", tags=["email-auth"])
+app.include_router(auth.telegram_router, prefix=f"{settings.API_V1_PREFIX}/auth/telegram", tags=["telegram-auth"])
 app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["users"])
 
 

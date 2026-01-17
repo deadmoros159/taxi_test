@@ -7,6 +7,7 @@ from app.schemas.auth import (
     VerifyCodeRequest, 
     VerifyPhoneCodeRequest,
     VerifyEmailCodeRequest,
+    TelegramAuthRequest,
     TokensResponse
 )
 from app.schemas.token import RefreshTokenRequest
@@ -16,9 +17,10 @@ from app.api.v1.dependencies import get_current_user
 
 router = APIRouter()
 
-# Подроутеры для phone и email
+# Подроутеры для phone, email и telegram
 phone_router = APIRouter()
 email_router = APIRouter()
+telegram_router = APIRouter()
 
 
 @phone_router.post("/request", response_model=dict)
@@ -193,6 +195,57 @@ async def verify_email_code(
         user_id=user_id,
         full_name=user.full_name if user else None,
         email=user.email if user else None
+    )
+
+
+@telegram_router.post("/authorize", response_model=TokensResponse)
+async def authorize_via_telegram(
+        request: Request,
+        telegram_request: TelegramAuthRequest,
+        db: AsyncSession = Depends(get_db)
+):
+    """
+    Авторизация через Telegram (без SMS кода).
+
+    Telegram уже подтвердил номер телефона, поэтому мы сразу создаем/находим
+    пользователя и выдаем JWT токены.
+    """
+    # Проверка rate limit
+    await rate_limiter.check_request_limit(
+        request,
+        f"telegram:{telegram_request.phone_number}"
+    )
+
+    auth_service = AuthService(db)
+    result = await auth_service.authorize_via_telegram(
+        phone_number=telegram_request.phone_number,
+        full_name=telegram_request.full_name,
+        telegram_user_id=telegram_request.telegram_user_id,
+        telegram_username=telegram_request.telegram_username
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Failed to authorize via Telegram",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token, refresh_token, user_id = result
+
+    # Получаем информацию о пользователе для ответа
+    from app.repositories.user_repository import UserRepository
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+
+    return TokensResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=900,  # 15 минут
+        user_id=user_id,
+        full_name=user.full_name if user else None,
+        phone_number=user.phone_number if user else None
     )
 
 

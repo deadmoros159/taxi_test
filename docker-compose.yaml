@@ -8,9 +8,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ENVIRONMENT=production
-      - DEBUG=false
+      - ENVIRONMENT=development
+      - DEBUG=true
       - RUN_MIGRATIONS=true
+      - ROOT_PATH=
       - POSTGRES_SERVER=postgres-auth
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
@@ -20,6 +21,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_DB=0
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres-auth:5432/auth_db
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis}@redis:6379/0
     env_file:
       - ./auth-service/.env
     depends_on:
@@ -46,8 +48,9 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - ENVIRONMENT=production
-      - DEBUG=false
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - ROOT_PATH=
       - POSTGRES_SERVER=postgres-driver
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
@@ -79,8 +82,9 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - ENVIRONMENT=production
-      - DEBUG=false
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - ROOT_PATH=
       - POSTGRES_SERVER=postgres-order
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
@@ -115,8 +119,9 @@ services:
     ports:
       - "8003:8003"
     environment:
-      - ENVIRONMENT=production
-      - DEBUG=false
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - ROOT_PATH=
       - AUTH_SERVICE_URL=http://auth-service:8000
       - DRIVER_SERVICE_URL=http://driver-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002
@@ -133,6 +138,31 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== TELEGRAM BOT SERVICE ====================
+  telegram-bot-service:
+    build:
+      context: ./telegram-bot-service
+      dockerfile: Dockerfile
+    container_name: taxi-telegram-bot-service
+    ports:
+      - "8004:8004"  # Порт для будущего HTTP API (если понадобится)
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-8577887798:AAEMGcMot27E9iY7dEunLRxbkG5maA77s6Y}
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - WEBHOOK_HOST=${WEBHOOK_HOST:-http://localhost:8004}
+      - WEBHOOK_PATH=/webhook
+      - HOST=0.0.0.0
+      - PORT=8004
+      - LOG_LEVEL=INFO
+    depends_on:
+      auth-service:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - taxi-network

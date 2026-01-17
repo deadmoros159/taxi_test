@@ -157,6 +157,95 @@ class AuthService:
             logger.error(f"Error verifying SMS code: {e}", exc_info=True)
             return None
 
+    async def authorize_via_telegram(
+            self,
+            phone_number: str,
+            full_name: str,
+            telegram_user_id: int,
+            telegram_username: Optional[str] = None
+    ) -> Optional[Tuple[str, str, int]]:
+        """
+        Авторизация через Telegram (без SMS кода).
+
+        Telegram уже подтвердил номер телефона, поэтому мы сразу создаем/находим
+        пользователя и выдаем JWT токены.
+
+        Args:
+            phone_number: Номер телефона из Telegram
+            full_name: Полное имя пользователя из Telegram
+            telegram_user_id: ID пользователя в Telegram
+            telegram_username: Username в Telegram (опционально)
+
+        Returns:
+            Tuple[access_token, refresh_token, user_id] или None если ошибка
+        """
+        try:
+            logger.info(
+                f"Authorizing via Telegram: {phone_number}, "
+                f"telegram_user_id: {telegram_user_id}, name: {full_name}"
+            )
+
+            # Находим или создаем пользователя
+            user = await self.user_repo.get_by_phone(phone_number)
+
+            if not user:
+                # Создаем нового пользователя с telegram_user_id
+                user = await self.user_repo.create_user(
+                    phone_number=phone_number,
+                    full_name=full_name,
+                    is_verified=True,  # Telegram уже подтвердил номер
+                    is_active=True,
+                    telegram_user_id=telegram_user_id,
+                    telegram_username=telegram_username
+                )
+                logger.info(f"New user created via Telegram: {user.id} - {full_name}, telegram_id: {telegram_user_id}")
+            else:
+                # Обновляем имя, telegram данные и активируем существующего пользователя
+                update_data = {
+                    "is_verified": True,
+                    "is_active": True,
+                    "telegram_user_id": telegram_user_id,
+                    "telegram_username": telegram_username
+                }
+                if user.full_name != full_name:
+                    update_data["full_name"] = full_name
+
+                await self.user_repo.update_user(user.id, **update_data)
+                logger.info(f"User activated/updated via Telegram: {user.id}, telegram_id: {telegram_user_id}")
+
+            # Создаем JWT токены (включая роль)
+            tokens = token_service.create_tokens(
+                user_id=user.id,
+                phone_number=user.phone_number,
+                full_name=user.full_name,
+                role=user.role
+            )
+
+            if not tokens:
+                logger.error(f"Failed to create tokens for user: {user.id}")
+                return None
+
+            access_token, refresh_token, refresh_token_id, expires_at = tokens
+
+            # Сохраняем refresh token в базу
+            token_saved = await self.token_repo.create_refresh_token(
+                user_id=user.id,
+                token=refresh_token_id,
+                expires_at=expires_at
+            )
+
+            if not token_saved:
+                logger.error(f"Failed to save refresh token for user: {user.id}")
+                return None
+
+            logger.info(f"User authenticated successfully via Telegram: {user.id}")
+
+            return access_token, refresh_token, user.id
+
+        except Exception as e:
+            logger.error(f"Error authorizing via Telegram: {e}", exc_info=True)
+            return None
+
     async def refresh_tokens(self, refresh_token: str) -> Optional[Tuple[str, str, int]]:
         """
         Обновление пары токенов с помощью refresh token

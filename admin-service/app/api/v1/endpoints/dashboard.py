@@ -2,6 +2,7 @@
 Эндпоинты для админ-дашборда
 """
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from datetime import datetime
 import httpx
@@ -14,17 +15,14 @@ from app.services.aggregation_service import AggregationService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+security = HTTPBearer()
 
 
-async def verify_admin_token(authorization: str = None) -> dict:
-    """Проверить токен админа через auth-service"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
-    
-    token = authorization.split(" ")[1]
+async def verify_admin_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> dict:
+    """Проверить токен админа через auth-service (защищенный dependency)"""
+    token = credentials.credentials
     
     async with httpx.AsyncClient() as client:
         try:
@@ -42,10 +40,13 @@ async def verify_admin_token(authorization: str = None) -> dict:
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Access denied. Admin or dispatcher role required."
                     )
+                # Сохраняем токен для дальнейшего использования
+                user_data["token"] = token
                 return user_data
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
             )
         except httpx.HTTPError as e:
             logger.error(f"Error verifying token: {e}")
@@ -57,16 +58,16 @@ async def verify_admin_token(authorization: str = None) -> dict:
 
 @router.get("/stats")
 async def get_dashboard_stats(
-    authorization: str = None
+    current_user: dict = Depends(verify_admin_token)
 ):
     """
     Получить общую статистику для дашборда
-    Доступно только для админов и диспетчеров
+    Доступно только для админов и диспетчеров (требуется авторизация)
     """
-    user = await verify_admin_token(authorization)
+    user = current_user
     
     stats_service = StatsService()
-    stats = await stats_service.get_dashboard_stats(user.get("token", authorization))
+    stats = await stats_service.get_dashboard_stats(user.get("token", ""))
     
     return stats
 
@@ -75,13 +76,13 @@ async def get_dashboard_stats(
 async def get_orders_stats(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    authorization: str = None
+    current_user: dict = Depends(verify_admin_token)
 ):
     """
     Получить статистику по заказам за период
-    Доступно только для админов и диспетчеров
+    Доступно только для админов и диспетчеров (требуется авторизация)
     """
-    user = await verify_admin_token(authorization)
+    user = current_user
     
     start = None
     end = None
@@ -106,7 +107,7 @@ async def get_orders_stats(
     
     stats_service = StatsService()
     stats = await stats_service.get_orders_stats(
-        user.get("token", authorization),
+        user.get("token", ""),
         start_date=start,
         end_date=end
     )
@@ -116,32 +117,32 @@ async def get_orders_stats(
 
 @router.get("/drivers/stats")
 async def get_drivers_stats(
-    authorization: str = None
+    current_user: dict = Depends(verify_admin_token)
 ):
     """
     Получить статистику по водителям
-    Доступно только для админов и диспетчеров
+    Доступно только для админов и диспетчеров (требуется авторизация)
     """
-    user = await verify_admin_token(authorization)
+    user = current_user
     
     stats_service = StatsService()
-    stats = await stats_service.get_drivers_stats(user.get("token", authorization))
+    stats = await stats_service.get_drivers_stats(user.get("token", ""))
     
     return stats
 
 
 @router.get("/drivers")
 async def get_all_drivers(
-    authorization: str = None
+    current_user: dict = Depends(verify_admin_token)
 ):
     """
     Получить список всех водителей
-    Доступно только для админов и диспетчеров
+    Доступно только для админов и диспетчеров (требуется авторизация)
     """
-    user = await verify_admin_token(authorization)
+    user = current_user
     
     aggregation = AggregationService()
-    drivers = await aggregation.get_all_drivers(user.get("token", authorization))
+    drivers = await aggregation.get_all_drivers(user.get("token", ""))
     
     return {"drivers": drivers, "total": len(drivers)}
 
@@ -150,17 +151,17 @@ async def get_all_drivers(
 async def get_all_orders(
     status: Optional[str] = None,
     limit: int = 100,
-    authorization: str = None
+    current_user: dict = Depends(verify_admin_token)
 ):
     """
     Получить список всех заказов
-    Доступно только для админов и диспетчеров
+    Доступно только для админов и диспетчеров (требуется авторизация)
     """
-    user = await verify_admin_token(authorization)
+    user = current_user
     
     aggregation = AggregationService()
     orders = await aggregation.get_all_orders(
-        user.get("token", authorization),
+        user.get("token", ""),
         status=status,
         limit=limit
     )

@@ -67,3 +67,23 @@ class VerifyCodeRequest(BaseModel):
     phone_number: Optional[str] = None
     email: Optional[str] = None
     code: str = Field(..., min_length=4, max_length=6)
+
+
+class TelegramAuthRequest(BaseModel):
+    """Авторизация через Telegram (без SMS кода)"""
+    phone_number: str = Field(..., description="Номер телефона из Telegram")
+    full_name: str = Field(..., description="Полное имя пользователя из Telegram")
+    telegram_user_id: int = Field(..., description="ID пользователя в Telegram")
+    telegram_username: Optional[str] = Field(None, description="Username в Telegram")
+
+    @validator('phone_number')
+    def validate_phone_number(cls, v):
+        if v:
+            try:
+                phone = phonenumbers.parse(v, None)
+                if not phonenumbers.is_valid_number(phone):
+                    raise ValueError("Invalid phone number")
+                return phonenumbers.format_number(phone, phonenumbers.PhoneNumberFormat.E164)
+            except:
+                raise ValueError("Invalid phone number format")
+        return v

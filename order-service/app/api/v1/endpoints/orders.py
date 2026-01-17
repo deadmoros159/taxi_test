@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 import httpx
@@ -16,6 +17,7 @@ from app.models.order import OrderStatus
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+security = HTTPBearer()
 
 
 async def verify_token(token: str) -> dict:
@@ -35,22 +37,22 @@ async def verify_token(token: str) -> dict:
             return None
 
 
-async def get_current_user(authorization: str = None) -> dict:
-    """Получить текущего пользователя из токена"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
-    
-    token = authorization.split(" ")[1]
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> dict:
+    """Получить текущего пользователя из токена (защищенный dependency)"""
+    token = credentials.credentials
     user_data = await verify_token(token)
     
     if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # Сохраняем токен для дальнейшего использования
+    user_data["token"] = token
     
     return user_data
 
@@ -59,10 +61,10 @@ async def get_current_user(authorization: str = None) -> dict:
 async def create_order(
     order_data: OrderCreate,
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_user: dict = Depends(get_current_user)
 ):
-    """Создать новый заказ"""
-    user = await get_current_user(authorization)
+    """Создать новый заказ (требуется авторизация)"""
+    user = current_user
     
     if not user.get("is_verified"):
         raise HTTPException(
@@ -85,10 +87,10 @@ async def create_order(
 @router.get("/pending", response_model=List[OrderResponse])
 async def get_pending_orders(
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_user: dict = Depends(get_current_user)
 ):
-    """Получить список ожидающих заказов (для водителей)"""
-    user = await get_current_user(authorization)
+    """Получить список ожидающих заказов (для водителей, требуется авторизация)"""
+    user = current_user
     
     if user.get("role") != "driver":
         raise HTTPException(
@@ -106,10 +108,10 @@ async def accept_order(
     order_id: int,
     accept_data: OrderAccept,
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_user: dict = Depends(get_current_user)
 ):
-    """Принять заказ водителем"""
-    user = await get_current_user(authorization)
+    """Принять заказ водителем (требуется авторизация)"""
+    user = current_user
     
     if user.get("role") != "driver":
         raise HTTPException(
@@ -120,9 +122,12 @@ async def accept_order(
     # Получаем информацию о машине водителя через driver-service
     async with httpx.AsyncClient() as client:
         try:
+            # Используем токен из current_user
+            token = user.get("token", "")
+            
             driver_response = await client.get(
                 f"{settings.DRIVER_SERVICE_URL}/api/v1/drivers/me",
-                headers={"Authorization": authorization},
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=5.0
             )
             if driver_response.status_code != 200:
@@ -166,10 +171,10 @@ async def cancel_order(
     order_id: int,
     cancel_data: OrderCancel,
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_user: dict = Depends(get_current_user)
 ):
-    """Отменить заказ"""
-    user = await get_current_user(authorization)
+    """Отменить заказ (требуется авторизация)"""
+    user = current_user
     
     order_repo = OrderRepository(db)
     debt_repo = DriverDebtRepository(db)
@@ -200,10 +205,10 @@ async def cancel_order(
 async def complete_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_user: dict = Depends(get_current_user)
 ):
-    """Завершить заказ (только для водителей)"""
-    user = await get_current_user(authorization)
+    """Завершить заказ (только для водителей, требуется авторизация)"""
+    user = current_user
     
     if user.get("role") != "driver":
         raise HTTPException(
@@ -231,10 +236,10 @@ async def complete_order(
 @router.get("/my-orders", response_model=List[OrderResponse])
 async def get_my_orders(
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_user: dict = Depends(get_current_user)
 ):
-    """Получить мои заказы"""
-    user = await get_current_user(authorization)
+    """Получить мои заказы (требуется авторизация)"""
+    user = current_user
     
     order_repo = OrderRepository(db)
     
@@ -251,10 +256,10 @@ async def get_all_orders(
     status: Optional[str] = None,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_user: dict = Depends(get_current_user)
 ):
-    """Получить все заказы (только для админов и диспетчеров)"""
-    user = await get_current_user(authorization)
+    """Получить все заказы (только для админов и диспетчеров, требуется авторизация)"""
+    user = current_user
     
     if user.get("role") not in ["admin", "dispatcher"]:
         raise HTTPException(
@@ -282,10 +287,10 @@ async def get_all_orders(
 async def get_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_user: dict = Depends(get_current_user)
 ):
-    """Получить информацию о заказе"""
-    user = await get_current_user(authorization)
+    """Получить информацию о заказе (требуется авторизация)"""
+    user = current_user
     
     order_repo = OrderRepository(db)
     order = await order_repo.get_order_by_id(order_id)

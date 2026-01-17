@@ -38,11 +38,12 @@ COPY --chown=appuser:appuser . .
 USER appuser
 
 # Запускаем приложение через gunicorn
+# Уменьшаем workers с 4 до 2 для экономии памяти на сервере с 2GB RAM
 CMD ["gunicorn", \
     "-k", "uvicorn.workers.UvicornWorker", \
     "--bind", "0.0.0.0:8000", \
-    "--workers", "4", \
-    "--threads", "2", \
+    "--workers", "2", \
+    "--threads", "1", \
     "--timeout", "120", \
     "--access-logfile", "-", \
     "--error-logfile", "-", \

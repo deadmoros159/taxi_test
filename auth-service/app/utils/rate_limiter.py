@@ -23,10 +23,17 @@ class RateLimiter:
                 self.redis = redis.from_url(
                     redis_url,
                     decode_responses=True,
+                    socket_connect_timeout=5.0,  # Таймаут подключения 5 секунд
+                    socket_timeout=5.0,  # Таймаут операций 5 секунд
                 )
-                # Тестируем подключение
-                await self.redis.ping()
+                # Тестируем подключение с таймаутом
+                await asyncio.wait_for(self.redis.ping(), timeout=10.0)  # Общий таймаут 10 секунд
                 logger.info("Redis connection established")
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.error("Redis connection timeout")
+                self.redis = None
+                if not settings.DEBUG:
+                    raise RuntimeError("Redis connection timeout")
             except Exception as e:
                 logger.error(f"Failed to connect to Redis: {e}")
                 # В development режиме можно продолжить без Redis

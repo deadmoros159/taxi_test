@@ -3,6 +3,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import text
 from typing import AsyncGenerator
 import logging
+import asyncio
 
 from app.core.config import settings
 
@@ -44,9 +45,15 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def check_db_connection() -> bool:
     """Проверка подключения к БД"""
     try:
-        async with AsyncSessionLocal() as session:
-            await session.execute(text("SELECT 1"))
+        async def _check():
+            async with AsyncSessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+        
+        await asyncio.wait_for(_check(), timeout=10.0)  # Таймаут 10 секунд
         return True
+    except asyncio.TimeoutError:
+        logger.error("Database connection timeout")
+        return False
     except Exception as e:
         logger.error(f"Database connection error: {e}")
         return False

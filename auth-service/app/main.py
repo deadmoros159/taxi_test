@@ -254,6 +254,9 @@ app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["
 app.include_router(auth.phone_router, prefix=f"{settings.API_V1_PREFIX}/auth/phone", tags=["phone-auth"])
 app.include_router(auth.email_router, prefix=f"{settings.API_V1_PREFIX}/auth/email", tags=["email-auth"])
 app.include_router(auth.telegram_router, prefix=f"{settings.API_V1_PREFIX}/auth/telegram", tags=["telegram-auth"])
+app.include_router(auth.admin_router, prefix=f"{settings.API_V1_PREFIX}/auth/admin", tags=["admin-auth"])
+
+app.include_router(users.staff_router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["staff"])
 app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["users"])
 
 

@@ -11,6 +11,7 @@ class User(Base):
     full_name = Column(String, nullable=False)
     phone_number = Column(String, unique=True, index=True, nullable=True)
     email = Column(String, unique=True, index=True, nullable=True)
+    password_hash = Column(String, nullable=True)  # bcrypt hash for email/password auth
     role = Column(String, default=UserRole.PASSENGER.value, nullable=False, index=True)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)

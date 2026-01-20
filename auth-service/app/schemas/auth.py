@@ -87,3 +87,29 @@ class TelegramAuthRequest(BaseModel):
             except:
                 raise ValueError("Invalid phone number format")
         return v
+
+
+class AdminRegisterRequest(BaseModel):
+    """Регистрация администратора по email/password (публичная)"""
+    email: EmailStr = Field(..., description="Email администратора")
+    password: str = Field(..., min_length=6, description="Пароль (минимум 6 символов)")
+    full_name: Optional[str] = Field(None, description="Полное имя администратора")
+
+
+class AdminLoginRequest(BaseModel):
+    """Вход администратора по email/password (публичная)"""
+    email: EmailStr = Field(..., description="Email администратора")
+    password: str = Field(..., description="Пароль")
+
+
+class DispatcherRegisterRequest(BaseModel):
+    """Регистрация диспетчера (создание аккаунта)"""
+    email: EmailStr = Field(..., description="Email диспетчера")
+    password: str = Field(..., min_length=6, description="Пароль диспетчера (минимум 6 символов)")
+    full_name: str = Field(..., description="Полное имя диспетчера")
+
+
+class StaffLoginRequest(BaseModel):
+    """Вход сотрудника (dispatcher/driver) по email/password"""
+    email: EmailStr = Field(..., description="Email сотрудника")
+    password: str = Field(..., description="Пароль")

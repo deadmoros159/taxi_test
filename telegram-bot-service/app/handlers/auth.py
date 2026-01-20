@@ -26,9 +26,31 @@ def get_contact_keyboard() -> ReplyKeyboardMarkup:
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     """Обработка команды /start"""
+    user = message.from_user
+    telegram_user_id = user.id
+
+    # Проверяем, есть ли пользователь уже в БД по telegram_user_id
+    auth_client = AuthClient()
+    try:
+        check = await auth_client.telegram_user_exists(telegram_user_id)
+        if check and check.get("exists") is True:
+            # Пользователь уже зарегистрирован — контакт не просим
+            await message.answer(
+                "✅ Вы уже зарегистрированы.\n\n"
+                "Авторизация доступна без отправки аккаунта.\n"
+                "Используйте клиентское приложение для получения токенов через API.",
+                reply_markup=None
+            )
+            return
+    except Exception as e:
+        logger.error(f"Error in cmd_start check: {e}", exc_info=True)
+    finally:
+        await auth_client.close()
+
+    # Если пользователя нет — просим отправить аккаунт/контакт
     await message.answer(
         "👋 Добро пожаловать в Taxi Service!\n\n"
-        "Для авторизации необходимо отправить ваш номер телефона.\n"
+        "Для регистрации необходимо отправить ваш номер телефона.\n"
         "Нажмите кнопку ниже для отправки контакта:",
         reply_markup=get_contact_keyboard()
     )

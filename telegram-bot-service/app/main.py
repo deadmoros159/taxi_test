@@ -196,10 +196,17 @@ def create_fastapi_app() -> FastAPI:
     
     # Подключаем API роутеры
     from app.api.v1.endpoints import auth as auth_endpoints
+    from app.api.v1.endpoints import telegram as telegram_endpoints
     app.include_router(
         auth_endpoints.router,
         prefix="/api/v1/auth/telegram",
         tags=["telegram-auth"]
+    )
+
+    app.include_router(
+        telegram_endpoints.router,
+        prefix="/api/v1/telegram",
+        tags=["telegram"]
     )
     
     return app

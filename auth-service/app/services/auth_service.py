@@ -246,6 +246,47 @@ class AuthService:
             logger.error(f"Error authorizing via Telegram: {e}", exc_info=True)
             return None
 
+    async def authorize_via_telegram_id(
+        self,
+        telegram_user_id: int,
+    ) -> Optional[Tuple[str, str, int]]:
+        """
+        Авторизация через Telegram по telegram_user_id.
+
+        Используется когда пользователь уже зарегистрирован ранее и в БД есть telegram_user_id.
+        """
+        try:
+            user = await self.user_repo.get_by_telegram_user_id(telegram_user_id)
+            if not user:
+                return None
+
+            if not user.is_active:
+                await self.user_repo.update_user(user.id, is_active=True)
+
+            tokens = token_service.create_tokens(
+                user_id=user.id,
+                phone_number=user.phone_number,
+                full_name=user.full_name,
+                role=user.role,
+                email=user.email,
+            )
+            if not tokens:
+                return None
+
+            access_token, refresh_token, refresh_token_id, expires_at = tokens
+            token_saved = await self.token_repo.create_refresh_token(
+                user_id=user.id,
+                token=refresh_token_id,
+                expires_at=expires_at,
+            )
+            if not token_saved:
+                return None
+
+            return access_token, refresh_token, user.id
+        except Exception as e:
+            logger.error(f"Error authorizing via Telegram ID: {e}", exc_info=True)
+            return None
+
     async def refresh_tokens(self, refresh_token: str) -> Optional[Tuple[str, str, int]]:
         """
         Обновление пары токенов с помощью refresh token

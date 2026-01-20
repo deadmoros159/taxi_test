@@ -66,6 +66,32 @@ class AuthClient:
         except httpx.TimeoutException as e:
             logger.error(f"Timeout connecting to auth-service: {self.base_url}, error: {e}")
             return None
+
+    async def telegram_user_exists(self, telegram_user_id: int) -> Optional[Dict]:
+        """Проверить наличие пользователя по telegram_user_id"""
+        try:
+            url = f"{self.base_url}/api/v1/auth/telegram/check/{telegram_user_id}"
+            response = await self.client.get(url)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            logger.error(f"Error checking telegram user: {e}", exc_info=True)
+            return None
+
+    async def authorize_via_telegram_id(self, telegram_user_id: int) -> Optional[Dict]:
+        """Авторизация по telegram_user_id (без контакта)"""
+        try:
+            url = f"{self.base_url}/api/v1/auth/telegram/authorize-by-id"
+            payload = {"telegram_user_id": telegram_user_id}
+            response = await self.client.post(url, json=payload)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return None
+        except Exception as e:
+            logger.error(f"Error authorizing via telegram id: {e}", exc_info=True)
+            return None
         except httpx.ConnectError as e:
             logger.error(f"Connection error to auth-service: {self.base_url}, error: {e}, URL was: {url if 'url' in locals() else 'unknown'}")
             return None

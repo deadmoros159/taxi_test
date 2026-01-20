@@ -62,13 +62,21 @@ async def dispatcher_register(
             detail="User with this email already exists",
         )
 
+    try:
+        password_hash = hash_password(payload.password)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
     user = await user_repo.create_user(
         email=str(payload.email),
         full_name=payload.full_name,
         role=UserRole.DISPATCHER.value,
         is_active=True,
         is_verified=True,
-        password_hash=hash_password(payload.password),
+        password_hash=password_hash,
     )
 
     return UserResponse(
@@ -108,7 +116,15 @@ async def _staff_login_for_role(
             detail="User is inactive",
         )
 
-    if not verify_password(payload.password, user.password_hash):
+    try:
+        ok = verify_password(payload.password, user.password_hash)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    if not ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

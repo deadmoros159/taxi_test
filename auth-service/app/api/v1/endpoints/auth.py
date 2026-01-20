@@ -8,12 +8,15 @@ from app.schemas.auth import (
     VerifyPhoneCodeRequest,
     VerifyEmailCodeRequest,
     TelegramAuthRequest,
+    TelegramIdAuthRequest,
+    TelegramUserCheckResponse,
     AdminRegisterRequest,
     AdminLoginRequest,
     TokensResponse
 )
 from app.schemas.token import RefreshTokenRequest
 from app.services.auth_service import AuthService
+from app.services.token_service import token_service
 from app.utils.rate_limiter import rate_limiter
 from app.api.v1.dependencies import get_current_user
 from app.models.role import UserRole
@@ -254,6 +257,63 @@ async def authorize_via_telegram(
     )
 
 
+@telegram_router.get("/check/{telegram_user_id}", response_model=TelegramUserCheckResponse)
+async def telegram_user_check(
+    telegram_user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Проверить, есть ли пользователь с telegram_user_id в БД"""
+    from app.repositories.user_repository import UserRepository
+
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_telegram_user_id(telegram_user_id)
+    if not user:
+        return TelegramUserCheckResponse(exists=False)
+    return TelegramUserCheckResponse(
+        exists=True,
+        user_id=user.id,
+        full_name=user.full_name,
+        phone_number=user.phone_number,
+    )
+
+
+@telegram_router.post("/authorize-by-id", response_model=TokensResponse)
+async def authorize_via_telegram_id(
+    request: Request,
+    payload: TelegramIdAuthRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Авторизация через Telegram по telegram_user_id (без отправки контакта).
+    """
+    await rate_limiter.check_request_limit(request, f"telegram_id:{payload.telegram_user_id}")
+
+    auth_service = AuthService(db)
+    result = await auth_service.authorize_via_telegram_id(payload.telegram_user_id)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Telegram user not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token, refresh_token, user_id = result
+    from app.repositories.user_repository import UserRepository
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+
+    return TokensResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=900,
+        user_id=user_id,
+        full_name=user.full_name if user else None,
+        phone_number=user.phone_number if user else None,
+        email=user.email if user else None,
+    )
+
+
 @admin_router.post("/register", response_model=TokensResponse)
 async def admin_register(
     request: Request,
@@ -275,13 +335,22 @@ async def admin_register(
             detail="User with this email already exists",
         )
 
+    try:
+        password_hash = hash_password(payload.password)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    # full_name is intentionally not part of the admin register payload anymore
     admin_user = await user_repo.create_user(
         email=str(payload.email),
-        full_name=payload.full_name or "Admin",
+        full_name="Admin",
         role=UserRole.ADMIN.value,
         is_active=True,
         is_verified=True,
-        password_hash=hash_password(payload.password),
+        password_hash=password_hash,
     )
 
     tokens = token_service.create_tokens(
@@ -348,7 +417,15 @@ async def admin_login(
             detail="User is inactive",
         )
 
-    if not verify_password(payload.password, user.password_hash):
+    try:
+        ok = verify_password(payload.password, user.password_hash)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    if not ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

@@ -3,6 +3,17 @@ import phonenumbers
 from typing import Optional
 import re
 
+MAX_BCRYPT_PASSWORD_BYTES = 72
+
+
+def _validate_password_bcrypt_limit(v: str) -> str:
+    # bcrypt max 72 bytes; enforce to avoid 500s
+    if v is None:
+        return v
+    if len(v.encode("utf-8")) > MAX_BCRYPT_PASSWORD_BYTES:
+        raise ValueError(f"Password too long (max {MAX_BCRYPT_PASSWORD_BYTES} bytes)")
+    return v
+
 
 class PhoneAuthRequest(BaseModel):
     """Запрос SMS кода на телефон"""
@@ -89,27 +100,43 @@ class TelegramAuthRequest(BaseModel):
         return v
 
 
+class TelegramUserCheckResponse(BaseModel):
+    """Проверка: существует ли пользователь Telegram в БД"""
+    exists: bool = Field(..., description="Есть ли пользователь в БД")
+    user_id: Optional[int] = Field(None, description="ID пользователя в системе (если exists=true)")
+    full_name: Optional[str] = Field(None, description="Имя пользователя (если exists=true)")
+    phone_number: Optional[str] = Field(None, description="Телефон (если есть)")
+
+
+class TelegramIdAuthRequest(BaseModel):
+    """Авторизация через Telegram по telegram_user_id (без отправки контакта)"""
+    telegram_user_id: int = Field(..., description="ID пользователя в Telegram")
+
+
 class AdminRegisterRequest(BaseModel):
     """Регистрация администратора по email/password (публичная)"""
     email: EmailStr = Field(..., description="Email администратора")
-    password: str = Field(..., min_length=6, description="Пароль (минимум 6 символов)")
-    full_name: Optional[str] = Field(None, description="Полное имя администратора")
+    password: str = Field(..., min_length=6, description="Пароль (bcrypt max 72 bytes)")
+    _pw = validator("password", allow_reuse=True)(_validate_password_bcrypt_limit)
 
 
 class AdminLoginRequest(BaseModel):
     """Вход администратора по email/password (публичная)"""
     email: EmailStr = Field(..., description="Email администратора")
     password: str = Field(..., description="Пароль")
+    _pw = validator("password", allow_reuse=True)(_validate_password_bcrypt_limit)
 
 
 class DispatcherRegisterRequest(BaseModel):
     """Регистрация диспетчера (создание аккаунта)"""
     email: EmailStr = Field(..., description="Email диспетчера")
-    password: str = Field(..., min_length=6, description="Пароль диспетчера (минимум 6 символов)")
+    password: str = Field(..., min_length=6, description="Пароль диспетчера (bcrypt max 72 bytes)")
     full_name: str = Field(..., description="Полное имя диспетчера")
+    _pw = validator("password", allow_reuse=True)(_validate_password_bcrypt_limit)
 
 
 class StaffLoginRequest(BaseModel):
     """Вход сотрудника (dispatcher/driver) по email/password"""
     email: EmailStr = Field(..., description="Email сотрудника")
     password: str = Field(..., description="Пароль")
+    _pw = validator("password", allow_reuse=True)(_validate_password_bcrypt_limit)

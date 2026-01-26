@@ -148,31 +148,29 @@ class EmailService:
             logger.info(event="smtp_no_cert_verify", message="SSL certificate verification disabled for self-signed certificate")
             
             try:
+                # Используем SMTP класс напрямую для лучшего контроля над SSL
                 if use_ssl:
-                    # Для порта 465 используем SSL (TLS с самого начала)
-                    await aiosmtplib.send(
-                        message,
+                    # Для порта 465 используем SSL с самого начала
+                    async with aiosmtplib.SMTP(
                         hostname=self.smtp_server,
                         port=self.smtp_port,
-                        username=self.smtp_username,
-                        password=self.smtp_password,
                         use_tls=True,  # SSL/TLS с самого начала
-                        start_tls=False,
-                        tls_context=ssl_context,  # Используем наш SSL контекст
-                    )
+                        tls_context=ssl_context,  # SSL контекст с отключенной проверкой
+                    ) as smtp:
+                        await smtp.login(self.smtp_username, self.smtp_password)
+                        await smtp.send_message(message)
                 else:
-                    # Для порта 587 используем STARTTLS (обычное соединение, затем TLS)
-                    # Важно: для STARTTLS тоже нужно передать tls_context
-                    await aiosmtplib.send(
-                        message,
+                    # Для порта 587 используем STARTTLS (сначала обычное соединение, затем TLS)
+                    async with aiosmtplib.SMTP(
                         hostname=self.smtp_server,
                         port=self.smtp_port,
-                        username=self.smtp_username,
-                        password=self.smtp_password,
-                        start_tls=use_tls,  # True для порта 587
-                        tls_context=ssl_context,  # SSL контекст для STARTTLS
                         use_tls=False,  # Не используем TLS с самого начала
-                    )
+                        tls_context=ssl_context,  # SSL контекст для STARTTLS
+                    ) as smtp:
+                        # Явно вызываем starttls с нашим SSL контекстом
+                        await smtp.starttls(tls_context=ssl_context)
+                        await smtp.login(self.smtp_username, self.smtp_password)
+                        await smtp.send_message(message)
                 
                 logger.info(event="email_sent_success", email=email, code=code, message="Email sent successfully")
             except Exception as smtp_error:

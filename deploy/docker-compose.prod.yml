@@ -22,7 +22,7 @@ services:
       - REDIS_DB=0
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-auth:5432/auth_db
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - SMTP_SSL_CERT_PATH=/app/ssl/xhap.ru.fullchain.crt  # Путь к SSL сертификату внутри контейнера
+      - SMTP_SSL_CERT_PATH=/app/ssl/xhap.ru.fullchain.crt
     env_file:
       - ../auth-service/.env
     depends_on:
@@ -41,7 +41,7 @@ services:
       - taxi-network
     volumes:
       - ../shared:/app/shared:ro
-      - /opt/taxi/ssl:/app/ssl:ro  # Монтируем SSL сертификаты с сервера
+      - /opt/taxi/ssl:/app/ssl:ro
 
   # ==================== DRIVER SERVICE ====================
   driver-service:
@@ -125,7 +125,7 @@ services:
       dockerfile: Dockerfile
     container_name: taxi-admin-service-prod
     ports:
-      - "8003:8003"
+      - "8005:8005"
     environment:
       - ENVIRONMENT=production
       - DEBUG=false
@@ -141,7 +141,7 @@ services:
       order-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -308,8 +308,8 @@ services:
     container_name: taxi-minio-prod
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"  # API порт
-      - "9001:9001"  # Console порт
+      - "9000:9000"
+      - "9001:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minioadmin}
@@ -355,4 +355,3 @@ volumes:
 networks:
   taxi-network:
     driver: bridge
-

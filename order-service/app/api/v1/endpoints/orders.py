@@ -1,17 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
+from typing import List, Optional, Dict
 import httpx
 import logging
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.core.config import settings
 from app.repositories.order_repository import OrderRepository
 from app.repositories.driver_debt_repository import DriverDebtRepository
 from app.services.order_service import OrderService
 from app.services.websocket_manager import websocket_manager
-from app.schemas.order import OrderCreate, OrderResponse, OrderCancel, OrderAccept
+from app.schemas.order import (
+    OrderCreate, OrderResponse, OrderCancel, OrderAccept,
+    OrderStatusUpdate, OrderDetailAdminResponse
+)
 from app.models.order import OrderStatus
 
 logger = logging.getLogger(__name__)
@@ -57,6 +60,36 @@ async def get_current_user(
     return user_data
 
 
+async def require_admin(
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Проверка что пользователь является админом"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can access this endpoint"
+        )
+    return current_user
+
+
+async def get_user_info(user_id: int, token: str) -> Optional[dict]:
+    """Получить информацию о пользователе из auth-service (требуется токен админа)"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{settings.AUTH_SERVICE_URL}/api/v1/users/{user_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            logger.warning(f"Failed to fetch user {user_id}: {response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching user info for user_id {user_id}: {e}")
+            return None
+
+
 @router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_order(
     order_data: OrderCreate,
@@ -82,6 +115,28 @@ async def create_order(
     await websocket_manager.broadcast_new_order(order)
     
     return order
+
+
+@router.get("/active", response_model=List[OrderResponse])
+async def get_active_orders(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Получить список активных заказов (заказы со статусом PENDING, которые водитель может брать).
+    Доступно для водителей.
+    """
+    user = current_user
+    
+    if user.get("role") != "driver":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only drivers can view active orders"
+        )
+    
+    order_repo = OrderRepository(db)
+    orders = await order_repo.get_pending_orders()
+    return orders
 
 
 @router.get("/pending", response_model=List[OrderResponse])
@@ -289,7 +344,10 @@ async def get_order(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Получить информацию о заказе (требуется авторизация)"""
+    """
+    Получить информацию о заказе (требуется авторизация).
+    Админ видит все заказы, водитель - только свои, пассажир - только свои.
+    """
     user = current_user
     
     order_repo = OrderRepository(db)
@@ -319,10 +377,167 @@ async def get_order(
     return order
 
 
+@router.get("/{order_id}/admin", response_model=OrderDetailAdminResponse)
+async def get_order_detail_admin(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    Получить детальную информацию о заказе (только для админа).
+    Включает полную информацию о пассажире и водителе.
+    """
+    order_repo = OrderRepository(db)
+    order = await order_repo.get_order_by_id(order_id)
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+    
+    # Получаем информацию о пассажире из auth-service
+    passenger_info = None
+    if order.passenger_id:
+        passenger_info = await get_user_info(order.passenger_id, current_user["token"])
+    
+    # Получаем информацию о водителе из auth-service
+    driver_info = None
+    if order.driver_id:
+        driver_info = await get_user_info(order.driver_id, current_user["token"])
+    
+    # Формируем ответ с полной информацией
+    return OrderDetailAdminResponse(
+        id=order.id,
+        status=order.status,
+        price=order.price,
+        estimated_time_minutes=order.estimated_time_minutes,
+        start_latitude=order.start_latitude,
+        start_longitude=order.start_longitude,
+        start_address=order.start_address,
+        end_latitude=order.end_latitude,
+        end_longitude=order.end_longitude,
+        end_address=order.end_address,
+        vehicle_info=order.vehicle_info,
+        cancellation_reason=order.cancellation_reason,
+        created_at=order.created_at,
+        updated_at=order.updated_at,
+        accepted_at=order.accepted_at,
+        completed_at=order.completed_at,
+        cancelled_at=order.cancelled_at,
+        passenger_id=order.passenger_id,
+        passenger_full_name=passenger_info.get("full_name") if passenger_info else None,
+        passenger_phone=passenger_info.get("phone_number") if passenger_info else None,
+        passenger_email=passenger_info.get("email") if passenger_info else None,
+        driver_id=order.driver_id,
+        driver_full_name=driver_info.get("full_name") if driver_info else None,
+        driver_phone=driver_info.get("phone_number") if driver_info else None,
+        driver_email=driver_info.get("email") if driver_info else None,
+        driver_location_lat=order.driver_location_lat,
+        driver_location_lng=order.driver_location_lng,
+    )
+
+
+@router.patch("/{order_id}/status", response_model=OrderResponse)
+async def update_order_status(
+    order_id: int,
+    status_update: OrderStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Изменить статус заказа (требуется авторизация).
+    Доступно для админов, диспетчеров и водителей (для своих заказов).
+    """
+    user = current_user
+    user_role = user.get("role")
+    
+    order_repo = OrderRepository(db)
+    order = await order_repo.get_order_by_id(order_id)
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+    
+    # Проверяем права доступа
+    if user_role not in ["admin", "dispatcher"]:
+        if user_role == "driver":
+            # Водитель может менять статус только своих заказов
+            if order.driver_id != user["id"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only update status of your own orders"
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins, dispatchers, and drivers can update order status"
+            )
+    
+    # Обновляем статус
+    updated_order = await order_repo.update_order_status(
+        order_id=order_id,
+        status=status_update.status
+    )
+    
+    if not updated_order:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to update order status"
+        )
+    
+    # Отправляем обновление через WebSocket
+    await websocket_manager.send_order_update(updated_order)
+    
+    return updated_order
+
+
 # WebSocket endpoints
 @router.websocket("/ws/driver/{driver_id}")
-async def websocket_driver_endpoint(websocket: WebSocket, driver_id: int):
-    """WebSocket для водителей (уведомления о новых заказах)"""
+async def websocket_driver_endpoint(
+    websocket: WebSocket,
+    driver_id: int,
+    token: Optional[str] = None
+):
+    """
+    WebSocket для водителей (уведомления о новых заказах).
+    
+    Требуется авторизация через токен в query параметре: ?token=Bearer_xxx
+    Водитель может подписаться только на свои уведомления.
+    """
+    # Принимаем соединение
+    await websocket.accept()
+    
+    # Проверяем токен
+    if not token:
+        await websocket.close(code=1008, reason="Token required")
+        return
+    
+    # Убираем "Bearer " префикс если есть
+    if token.startswith("Bearer "):
+        token = token[7:]
+    
+    # Проверяем токен
+    user_data = await verify_token(token)
+    if not user_data:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+    
+    # Проверяем права доступа: водитель может подписаться только на свои уведомления
+    user_role = user_data.get("role")
+    user_id = user_data.get("id")
+    
+    if user_role != "driver":
+        await websocket.close(code=1008, reason="Only drivers can connect")
+        return
+    
+    if user_id != driver_id:
+        await websocket.close(code=1008, reason="Access denied: can only subscribe to your own notifications")
+        return
+    
+    # Подключаем водителя
     await websocket_manager.connect_driver(websocket, driver_id)
     try:
         while True:
@@ -335,8 +550,61 @@ async def websocket_driver_endpoint(websocket: WebSocket, driver_id: int):
 
 
 @router.websocket("/ws/order/{order_id}")
-async def websocket_order_endpoint(websocket: WebSocket, order_id: int):
-    """WebSocket для заказа (обновления для пассажира)"""
+async def websocket_order_endpoint(
+    websocket: WebSocket,
+    order_id: int,
+    token: Optional[str] = None
+):
+    """
+    WebSocket для заказа (обновления для пассажира, водителя или админа).
+    
+    Требуется авторизация через токен в query параметре: ?token=Bearer_xxx
+    Пользователь может подписаться только на свои заказы (пассажир - на свои, водитель - на свои, админ - на любые).
+    """
+    # Принимаем соединение
+    await websocket.accept()
+    
+    # Проверяем токен
+    if not token:
+        await websocket.close(code=1008, reason="Token required")
+        return
+    
+    # Убираем "Bearer " префикс если есть
+    if token.startswith("Bearer "):
+        token = token[7:]
+    
+    # Проверяем токен
+    user_data = await verify_token(token)
+    if not user_data:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+    
+    # Проверяем права доступа
+    user_role = user_data.get("role")
+    user_id = user_data.get("id")
+    
+    # Админы и диспетчеры могут подписаться на любые заказы
+    if user_role not in ["admin", "dispatcher"]:
+        # Получаем информацию о заказе для проверки прав
+        async with AsyncSessionLocal() as db_session:
+            order_repo = OrderRepository(db_session)
+            order = await order_repo.get_order_by_id(order_id)
+            
+            if not order:
+                await websocket.close(code=1008, reason="Order not found")
+                return
+            
+            # Проверяем, что пользователь имеет отношение к заказу
+            if user_role == "driver":
+                if order.driver_id != user_id:
+                    await websocket.close(code=1008, reason="Access denied: can only subscribe to your own orders")
+                    return
+            else:  # passenger
+                if order.passenger_id != user_id:
+                    await websocket.close(code=1008, reason="Access denied: can only subscribe to your own orders")
+                    return
+    
+    # Подключаем к заказу
     await websocket_manager.connect_order(websocket, order_id)
     try:
         while True:

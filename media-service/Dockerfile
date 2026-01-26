@@ -5,6 +5,7 @@ WORKDIR /app
 # Устанавливаем системные зависимости
 RUN apt-get update && apt-get install -y \
     gcc \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Копируем зависимости
@@ -37,15 +38,13 @@ COPY --chown=appuser:appuser . .
 USER appuser
 
 # Запускаем приложение через gunicorn
-# Уменьшаем workers с 4 до 2 для экономии памяти на сервере с 2GB RAM
 CMD ["gunicorn", \
     "-k", "uvicorn.workers.UvicornWorker", \
-    "--bind", "0.0.0.0:8005", \
+    "--bind", "0.0.0.0:8003", \
     "--workers", "2", \
     "--threads", "1", \
     "--timeout", "120", \
     "--access-logfile", "-", \
     "--error-logfile", "-", \
     "app.main:app"]
-
 

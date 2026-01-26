@@ -52,17 +52,11 @@ class VerifyEmailCodeRequest(BaseModel):
 
 
 class TokensResponse(BaseModel):
-    """Ответ с JWT токенами"""
+    """Ответ с JWT токенами (только токены, без данных пользователя)"""
     access_token: str = Field(..., description="JWT access token (живет 1 час)")
     refresh_token: str = Field(..., description="JWT refresh token (живет 30 дней)")
     token_type: str = Field(default="bearer", description="Тип токена")
     expires_in: int = Field(..., description="Время жизни access токена в секундах (3600)")
-    user_id: int = Field(..., description="ID пользователя")
-
-    # Опциональные поля пользователя
-    full_name: Optional[str] = Field(None, description="Полное имя пользователя")
-    email: Optional[EmailStr] = Field(None, description="Email пользователя")
-    phone_number: Optional[str] = Field(None, description="Номер телефона пользователя")
 
 
 # Для обратной совместимости (можно удалить позже)
@@ -81,11 +75,19 @@ class VerifyCodeRequest(BaseModel):
 
 
 class TelegramAuthRequest(BaseModel):
-    """Авторизация через Telegram (без SMS кода)"""
+    """
+    Авторизация через Telegram (для Flutter/мобильных приложений).
+    
+    Принимает данные от Telegram SDK/API и создает/находит пользователя.
+    Все данные (имя, телефон, фото) автоматически сохраняются в БД.
+    """
     phone_number: str = Field(..., description="Номер телефона из Telegram")
     full_name: str = Field(..., description="Полное имя пользователя из Telegram")
     telegram_user_id: int = Field(..., description="ID пользователя в Telegram")
     telegram_username: Optional[str] = Field(None, description="Username в Telegram")
+    photo_url: Optional[str] = Field(None, description="URL фото профиля из Telegram (опционально)")
+    auth_date: Optional[int] = Field(None, description="Дата авторизации в Telegram (Unix timestamp, опционально)")
+    hash: Optional[str] = Field(None, description="Хеш для проверки подписи данных (опционально, для безопасности)")
 
     @validator('phone_number')
     def validate_phone_number(cls, v):
@@ -111,6 +113,23 @@ class TelegramUserCheckResponse(BaseModel):
 class TelegramIdAuthRequest(BaseModel):
     """Авторизация через Telegram по telegram_user_id (без отправки контакта)"""
     telegram_user_id: int = Field(..., description="ID пользователя в Telegram")
+
+
+class PhoneAuthForAppRequest(BaseModel):
+    """Авторизация по номеру телефона (для Flutter/мобильных приложений)"""
+    phone_number: str = Field(..., description="Номер телефона (должен быть зарегистрирован через Telegram бот)")
+    
+    @validator('phone_number')
+    def validate_phone_number(cls, v):
+        if v:
+            try:
+                phone = phonenumbers.parse(v, None)
+                if not phonenumbers.is_valid_number(phone):
+                    raise ValueError("Invalid phone number")
+                return phonenumbers.format_number(phone, phonenumbers.PhoneNumberFormat.E164)
+            except:
+                raise ValueError("Invalid phone number format")
+        return v
 
 
 class AdminRegisterRequest(BaseModel):

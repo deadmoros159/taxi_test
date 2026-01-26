@@ -17,8 +17,7 @@ class WebSocketManager:
         self.order_connections: Dict[int, Set[WebSocket]] = {}
 
     async def connect_driver(self, websocket: WebSocket, driver_id: int):
-        """Подключить водителя"""
-        await websocket.accept()
+        """Подключить водителя (websocket уже должен быть принят)"""
         if driver_id not in self.active_connections:
             self.active_connections[driver_id] = set()
         self.active_connections[driver_id].add(websocket)
@@ -33,8 +32,7 @@ class WebSocketManager:
         logger.info(f"Driver {driver_id} disconnected")
 
     async def connect_order(self, websocket: WebSocket, order_id: int):
-        """Подключить к заказу (для пассажира)"""
-        await websocket.accept()
+        """Подключить к заказу (для пассажира) (websocket уже должен быть принят)"""
         if order_id not in self.order_connections:
             self.order_connections[order_id] = set()
         self.order_connections[order_id].add(websocket)

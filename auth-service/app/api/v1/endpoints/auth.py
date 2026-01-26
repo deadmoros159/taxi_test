@@ -12,7 +12,8 @@ from app.schemas.auth import (
     TelegramUserCheckResponse,
     AdminRegisterRequest,
     AdminLoginRequest,
-    TokensResponse
+    TokensResponse,
+    PhoneAuthForAppRequest
 )
 from app.schemas.token import RefreshTokenRequest
 from app.services.auth_service import AuthService
@@ -21,6 +22,7 @@ from app.utils.rate_limiter import rate_limiter
 from app.api.v1.dependencies import get_current_user
 from app.models.role import UserRole
 from app.utils.password import hash_password, verify_password
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -102,20 +104,12 @@ async def verify_phone_code(
         )
 
     access_token, refresh_token, user_id = result
-    
-    # Получаем информацию о пользователе для ответа
-    from app.repositories.user_repository import UserRepository
-    user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(user_id)
 
     return TokensResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=900,  # 15 минут
-        user_id=user_id,
-        full_name=user.full_name if user else None,
-        phone_number=user.phone_number if user else None
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # 1 час
     )
 
 
@@ -189,20 +183,12 @@ async def verify_email_code(
         )
 
     access_token, refresh_token, user_id = result
-    
-    # Получаем информацию о пользователе для ответа
-    from app.repositories.user_repository import UserRepository
-    user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(user_id)
 
     return TokensResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=900,  # 15 минут
-        user_id=user_id,
-        full_name=user.full_name if user else None,
-        email=user.email if user else None
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # 1 час
     )
 
 
@@ -213,10 +199,38 @@ async def authorize_via_telegram(
         db: AsyncSession = Depends(get_db)
 ):
     """
-    Авторизация через Telegram (без SMS кода).
-
-    Telegram уже подтвердил номер телефона, поэтому мы сразу создаем/находим
-    пользователя и выдаем JWT токены.
+    Авторизация через Telegram (независимый метод, не требует других способов авторизации).
+    
+    Принимает данные от Telegram SDK/API и создает/находит пользователя в системе.
+    Все данные (имя, телефон, telegram_user_id) автоматически сохраняются в БД.
+    
+    Как это работает:
+    1. Пользователь нажимает "Войти через Telegram" в приложении
+    2. Открывается Telegram (через SDK/deep link)
+    3. Пользователь подтверждает авторизацию
+    4. Telegram возвращает данные: phone_number, full_name, telegram_user_id, telegram_username
+    5. Приложение отправляет эти данные на этот endpoint
+    6. Бэкенд:
+       - Ищет пользователя по telegram_user_id
+       - Если не найден - создает нового пользователя
+       - Если найден - обновляет данные (имя, телефон, username)
+    7. Бэкенд возвращает JWT токены
+    
+    Пример запроса:
+    {
+      "phone_number": "+79991234567",
+      "full_name": "Иван Иванов",
+      "telegram_user_id": 123456789,
+      "telegram_username": "ivan_ivanov"  // опционально
+    }
+    
+    Ответ:
+    {
+      "access_token": "...",
+      "refresh_token": "...",
+      "token_type": "bearer",
+      "expires_in": 3600
+    }
     """
     # Проверка rate limit
     await rate_limiter.check_request_limit(
@@ -241,19 +255,11 @@ async def authorize_via_telegram(
 
     access_token, refresh_token, user_id = result
 
-    # Получаем информацию о пользователе для ответа
-    from app.repositories.user_repository import UserRepository
-    user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(user_id)
-
     return TokensResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=900,  # 15 минут
-        user_id=user_id,
-        full_name=user.full_name if user else None,
-        phone_number=user.phone_number if user else None
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # 1 час
     )
 
 
@@ -285,6 +291,8 @@ async def authorize_via_telegram_id(
 ):
     """
     Авторизация через Telegram по telegram_user_id (без отправки контакта).
+    
+    Используется для Telegram Web App, где доступен telegram_user_id.
     """
     await rate_limiter.check_request_limit(request, f"telegram_id:{payload.telegram_user_id}")
 
@@ -298,19 +306,54 @@ async def authorize_via_telegram_id(
         )
 
     access_token, refresh_token, user_id = result
-    from app.repositories.user_repository import UserRepository
-    user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(user_id)
 
     return TokensResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=900,
-        user_id=user_id,
-        full_name=user.full_name if user else None,
-        phone_number=user.phone_number if user else None,
-        email=user.email if user else None,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@telegram_router.post("/authorize-by-phone", response_model=TokensResponse)
+async def authorize_via_phone(
+    request: Request,
+    payload: PhoneAuthForAppRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Авторизация по номеру телефона (для Flutter/мобильных приложений).
+    
+    Работает только для пользователей, которые уже зарегистрированы через Telegram бот.
+    Пользователь должен сначала отправить контакт через бот, затем может использовать
+    этот endpoint для получения токенов в мобильном приложении.
+    
+    Пример:
+    1. Пользователь отправляет контакт через Telegram бот
+    2. Пользователь открывает Flutter приложение
+    3. Пользователь вводит номер телефона
+    4. Приложение вызывает этот endpoint
+    5. Получает токены
+    """
+    await rate_limiter.check_request_limit(request, f"phone_auth:{payload.phone_number}")
+
+    auth_service = AuthService(db)
+    result = await auth_service.authorize_via_phone(payload.phone_number)
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or not registered via Telegram. Please register through Telegram bot first.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token, refresh_token, user_id = result
+
+    return TokensResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
@@ -378,10 +421,7 @@ async def admin_register(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=900,
-        user_id=admin_user.id,
-        full_name=admin_user.full_name,
-        email=admin_user.email,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
@@ -458,10 +498,7 @@ async def admin_login(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=900,
-        user_id=user.id,
-        full_name=user.full_name,
-        email=user.email,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
@@ -492,7 +529,7 @@ async def refresh_tokens(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=900
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
 

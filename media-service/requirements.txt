@@ -1,0 +1,27 @@
+# Основные
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+
+# База данных
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Валидация и конфигурация
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# HTTP клиенты
+httpx==0.25.1
+
+# S3/MinIO клиент
+minio==7.2.0
+
+# Утилиты
+python-dotenv==1.0.0
+structlog==23.1.0
+
+# Для загрузки файлов (multipart/form-data)
+python-multipart==0.0.6
+

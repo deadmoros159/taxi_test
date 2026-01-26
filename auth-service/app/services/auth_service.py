@@ -185,11 +185,11 @@ class AuthService:
                 f"telegram_user_id: {telegram_user_id}, name: {full_name}"
             )
 
-            # Находим или создаем пользователя
-            user = await self.user_repo.get_by_phone(phone_number)
+            # Ищем пользователя по telegram_user_id (основной идентификатор для Telegram)
+            user = await self.user_repo.get_by_telegram_user_id(telegram_user_id)
 
             if not user:
-                # Создаем нового пользователя с telegram_user_id
+                # Пользователь не найден - создаем нового через Telegram
                 user = await self.user_repo.create_user(
                     phone_number=phone_number,
                     full_name=full_name,
@@ -200,18 +200,23 @@ class AuthService:
                 )
                 logger.info(f"New user created via Telegram: {user.id} - {full_name}, telegram_id: {telegram_user_id}")
             else:
-                # Обновляем имя, telegram данные и активируем существующего пользователя
+                # Пользователь уже существует - обновляем данные (имя, телефон, username)
                 update_data = {
                     "is_verified": True,
                     "is_active": True,
-                    "telegram_user_id": telegram_user_id,
                     "telegram_username": telegram_username
                 }
+                
+                # Обновляем имя если изменилось
                 if user.full_name != full_name:
                     update_data["full_name"] = full_name
+                
+                # Обновляем телефон если изменился (может быть, если пользователь сменил номер в Telegram)
+                if user.phone_number != phone_number:
+                    update_data["phone_number"] = phone_number
 
                 await self.user_repo.update_user(user.id, **update_data)
-                logger.info(f"User activated/updated via Telegram: {user.id}, telegram_id: {telegram_user_id}")
+                logger.info(f"User updated via Telegram: {user.id}, telegram_id: {telegram_user_id}")
 
             # Создаем JWT токены (включая роль)
             tokens = token_service.create_tokens(
@@ -285,6 +290,61 @@ class AuthService:
             return access_token, refresh_token, user.id
         except Exception as e:
             logger.error(f"Error authorizing via Telegram ID: {e}", exc_info=True)
+            return None
+
+    async def authorize_via_phone(
+        self,
+        phone_number: str,
+    ) -> Optional[Tuple[str, str, int]]:
+        """
+        Авторизация по номеру телефона (для Flutter приложений).
+        
+        Работает только для пользователей, которые зарегистрированы через Telegram бот
+        (имеют telegram_user_id).
+        """
+        try:
+            # Нормализуем номер телефона (добавляем + если отсутствует)
+            normalized_phone = phone_number
+            if not normalized_phone.startswith("+"):
+                normalized_phone = f"+{normalized_phone}"
+            
+            user = await self.user_repo.get_by_phone(normalized_phone)
+            
+            if not user:
+                logger.warning(f"User not found for phone: {normalized_phone}")
+                return None
+            
+            # Проверяем, что пользователь зарегистрирован через Telegram
+            if not user.telegram_user_id:
+                logger.warning(f"User {user.id} is not registered via Telegram (no telegram_user_id)")
+                return None
+            
+            if not user.is_active:
+                await self.user_repo.update_user(user.id, is_active=True)
+            
+            tokens = token_service.create_tokens(
+                user_id=user.id,
+                phone_number=user.phone_number,
+                full_name=user.full_name,
+                role=user.role,
+                email=user.email,
+            )
+            if not tokens:
+                return None
+            
+            access_token, refresh_token, refresh_token_id, expires_at = tokens
+            token_saved = await self.token_repo.create_refresh_token(
+                user_id=user.id,
+                token=refresh_token_id,
+                expires_at=expires_at,
+            )
+            if not token_saved:
+                return None
+            
+            logger.info(f"User {user.id} authorized via phone: {normalized_phone}")
+            return access_token, refresh_token, user.id
+        except Exception as e:
+            logger.error(f"Error authorizing via phone: {e}", exc_info=True)
             return None
 
     async def refresh_tokens(self, refresh_token: str) -> Optional[Tuple[str, str, int]]:

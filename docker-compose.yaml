@@ -22,6 +22,12 @@ services:
       - REDIS_DB=0
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres-auth:5432/auth_db
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis}@redis:6379/0
+      # SMTP настройки для отправки кодов авторизации
+      - SMTP_SERVER=mail.xhap.ru
+      - SMTP_PORT=465
+      - SMTP_USERNAME=support@xhap.ru
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SENDER_EMAIL=support@xhap.ru
     env_file:
       - ./auth-service/.env
     depends_on:
@@ -110,6 +116,48 @@ services:
     networks:
       - taxi-network
 
+  # ==================== MEDIA SERVICE ====================
+  media-service:
+    build:
+      context: ./media-service
+      dockerfile: Dockerfile
+    container_name: taxi-media-service
+    ports:
+      - "8003:8003"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - ROOT_PATH=
+      - POSTGRES_SERVER=postgres-media
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=media_db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres-media:5432/media_db
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET_NAME=media
+      - MINIO_SECURE=false
+      - MAX_FILE_SIZE_MB=5
+    depends_on:
+      postgres-media:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
   # ==================== ADMIN SERVICE ====================
   admin-service:
     build:
@@ -117,7 +165,7 @@ services:
       dockerfile: Dockerfile
     container_name: taxi-admin-service
     ports:
-      - "8003:8003"
+      - "8005:8005"
     environment:
       - ENVIRONMENT=development
       - DEBUG=true
@@ -179,7 +227,7 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:8000
       - DRIVER_SERVICE_URL=http://driver-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002
-      - ADMIN_SERVICE_URL=http://admin-service:8003
+      - ADMIN_SERVICE_URL=http://admin-service:8005
     depends_on:
       - auth-service
       - driver-service
@@ -245,6 +293,46 @@ services:
     networks:
       - taxi-network
 
+  postgres-media:
+    image: postgres:15-alpine
+    container_name: taxi-postgres-media
+    environment:
+      POSTGRES_DB: media_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_media_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== MINIO (S3-совместимое хранилище) ====================
+  minio:
+    image: minio/minio:latest
+    container_name: taxi-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # API порт
+      - "9001:9001"  # Console порт
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
   # ==================== REDIS ====================
   redis:
     image: redis:7-alpine
@@ -292,7 +380,9 @@ volumes:
   postgres_auth_data:
   postgres_driver_data:
   postgres_order_data:
+  postgres_media_data:
   redis_data:
+  minio_data:
 
 networks:
   taxi-network:

@@ -29,7 +29,7 @@ class Settings(BaseSettings):
         description="Секретный ключ для JWT refresh токенов"
     )
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 час
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # Database
@@ -109,11 +109,12 @@ class Settings(BaseSettings):
     SMS_COOLDOWN_SECONDS: int = 60  # Задержка между отправкой SMS
 
     # Email Configuration
-    SMTP_SERVER: str = "smtp.example.com"
-    SMTP_PORT: int = 587
-    SMTP_USERNAME: str = "your_email@example.com"
+    SMTP_SERVER: str = Field(default="", description="SMTP сервер для отправки email")
+    SMTP_PORT: int = Field(default=465, description="SMTP порт (465 для SSL, 587 для STARTTLS)")
+    SMTP_USERNAME: str = Field(default="", description="Имя пользователя SMTP")
     SMTP_PASSWORD: SecretStr = Field(default=SecretStr(""), description="Пароль от SMTP аккаунта")
-    SENDER_EMAIL: str = "no-reply@example.com"
+    SENDER_EMAIL: str = Field(default="", description="Email отправителя")
+    SMTP_SSL_CERT_PATH: Optional[str] = Field(default=None, description="Путь к SSL сертификату (если не указан, используется самоподписанный)")
     EMAIL_CODE_EXPIRE_SECONDS: int = 300  # 5 минут
     EMAIL_CODE_LENGTH: int = 6
     EMAIL_MAX_ATTEMPTS: int = 5
@@ -159,6 +160,12 @@ class Settings(BaseSettings):
     ALLOWED_PHONE_PREFIXES: List[str] = Field(
         default=["+998", "+7"],
         description="Разрешенные префиксы номеров телефонов"
+    )
+    
+    # External Services
+    DRIVER_SERVICE_URL: str = Field(
+        default="http://driver-service:8001",
+        description="URL driver-service для получения данных водителя"
     )
 
     class Config:

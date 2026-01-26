@@ -15,6 +15,11 @@ class OrderRepository:
 
     async def create_order(self, order_data: OrderCreate, passenger_id: int) -> Order:
         """Создать новый заказ"""
+        from datetime import datetime, timezone
+        
+        # Используем указанную дату/время или текущее время
+        order_date = order_data.order_date if order_data.order_date else datetime.now(timezone.utc)
+        
         order = Order(
             passenger_id=passenger_id,
             start_latitude=order_data.start_latitude,
@@ -25,9 +30,21 @@ class OrderRepository:
             end_address=order_data.end_address,
             status=OrderStatus.PENDING,
         )
+        # Если указана дата, устанавливаем её (created_at будет установлен автоматически, но можно переопределить)
+        if order_data.order_date:
+            # SQLAlchemy установит created_at автоматически, но мы можем установить через update после создания
+            pass
+        
         self.db.add(order)
         await self.db.commit()
         await self.db.refresh(order)
+        
+        # Если указана дата, обновляем created_at
+        if order_data.order_date:
+            order.created_at = order_date
+            await self.db.commit()
+            await self.db.refresh(order)
+        
         return order
 
     async def get_order_by_id(self, order_id: int) -> Optional[Order]:

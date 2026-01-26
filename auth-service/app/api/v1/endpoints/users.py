@@ -2,9 +2,12 @@
 Endpoints для управления пользователями и ролями
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
+import httpx
+import logging
 
 from app.core.database import get_db
 from app.api.v1.dependencies import (
@@ -21,9 +24,13 @@ from app.utils.password import hash_password, verify_password
 from app.services.token_service import token_service
 from app.repositories.token_repository import TokenRepository
 from app.utils.rate_limiter import rate_limiter
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 staff_router = APIRouter()
+security = HTTPBearer()
 
 
 class UpdateRoleRequest(BaseModel):
@@ -40,6 +47,22 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     is_verified: bool
+    
+    class Config:
+        from_attributes = True
+
+
+class UserProfileResponse(BaseModel):
+    """Расширенный ответ для личного кабинета (может включать данные водителя)"""
+    id: int
+    full_name: str
+    phone_number: str | None = None
+    email: str | None = None
+    role: str
+    is_active: bool
+    is_verified: bool
+    # Дополнительные данные для водителя (если роль = driver)
+    driver_data: Optional[Dict[str, Any]] = None
     
     class Config:
         from_attributes = True
@@ -156,11 +179,7 @@ async def _staff_login_for_role(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=900,
-        user_id=user.id,
-        full_name=user.full_name,
-        email=user.email,
-        phone_number=user.phone_number,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
@@ -176,19 +195,92 @@ async def dispatcher_login(
     return await _staff_login_for_role(payload, UserRole.DISPATCHER.value, db)
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserProfileResponse)
 async def get_current_user_info(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Получить информацию о текущем пользователе"""
+    """
+    Получить информацию о текущем пользователе (личный кабинет).
+    
+    Для всех ролей возвращает базовую информацию из auth-service.
+    Для водителей дополнительно получает данные из driver-service (документы, авто, статус и т.д.).
+    """
+    # Базовая информация о пользователе
+    base_response = {
+        "id": current_user.id,
+        "full_name": current_user.full_name,
+        "phone_number": current_user.phone_number,
+        "email": current_user.email,
+        "role": current_user.role,
+        "is_active": current_user.is_active,
+        "is_verified": current_user.is_verified,
+        "driver_data": None
+    }
+    
+    # Если пользователь - водитель, получаем дополнительные данные из driver-service
+    if current_user.role == UserRole.DRIVER.value:
+        token = credentials.credentials
+        driver_data = await get_driver_info(current_user.id, token)
+        if driver_data:
+            base_response["driver_data"] = driver_data
+        else:
+            logger.warning(f"Could not fetch driver data for user {current_user.id}")
+    
+    return UserProfileResponse(**base_response)
+
+
+async def get_driver_info(driver_id: int, token: str) -> Optional[Dict[str, Any]]:
+    """Получить информацию о водителе из driver-service"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{settings.DRIVER_SERVICE_URL}/api/v1/drivers/me",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            logger.warning(f"Failed to fetch driver info: {response.status_code}")
+            return None
+        except httpx.TimeoutException:
+            logger.error(f"Timeout fetching driver info for driver {driver_id}")
+            return None
+        except httpx.ConnectError:
+            logger.error(f"Connection error to driver-service: {settings.DRIVER_SERVICE_URL}")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching driver info: {e}", exc_info=True)
+            return None
+
+
+@router.get("/{user_id}", response_model=UserResponse)
+async def get_user_by_id(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получить информацию о пользователе по ID (только для админов).
+    Используется другими сервисами для получения полной информации о пользователе.
+    """
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
     return UserResponse(
-        id=current_user.id,
-        full_name=current_user.full_name,
-        phone_number=current_user.phone_number,
-        email=current_user.email,
-        role=current_user.role,
-        is_active=current_user.is_active,
-        is_verified=current_user.is_verified
+        id=user.id,
+        full_name=user.full_name,
+        phone_number=user.phone_number,
+        email=user.email,
+        role=user.role,
+        is_active=user.is_active,
+        is_verified=user.is_verified
     )
 
 

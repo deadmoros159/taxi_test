@@ -2,6 +2,7 @@ import logging
 import time
 import random
 import string
+import ssl
 from typing import Optional, Tuple
 from app.core.config import settings
 import redis.asyncio as redis
@@ -134,24 +135,38 @@ class EmailService:
             logger.info(event="smtp_connect", server=self.smtp_server, port=self.smtp_port, message="Connecting to SMTP server")
             
             # Отправка через SMTP
-            # Для Gmail может потребоваться использование SSL вместо STARTTLS
+            # Для порта 465 используем SSL, для 587 - STARTTLS
             use_tls = self.smtp_port == 587  # STARTTLS для порта 587
             use_ssl = self.smtp_port == 465  # SSL для порта 465
             
+            # Создаем SSL контекст
+            # Если указан путь к сертификату - используем его, иначе отключаем проверку (для самоподписанных)
+            if settings.SMTP_SSL_CERT_PATH:
+                # Используем существующий сертификат с сервера
+                ssl_context = ssl.create_default_context(cafile=settings.SMTP_SSL_CERT_PATH)
+                logger.info(event="smtp_using_cert", cert_path=settings.SMTP_SSL_CERT_PATH, message="Using existing SSL certificate")
+            else:
+                # Для самоподписанных сертификатов отключаем проверку
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+                logger.info(event="smtp_no_cert_verify", message="SSL certificate verification disabled for self-signed certificate")
+            
             try:
                 if use_ssl:
-                    # Для порта 465 используем SSL
+                    # Для порта 465 используем SSL (TLS с самого начала)
                     await aiosmtplib.send(
                         message,
                         hostname=self.smtp_server,
                         port=self.smtp_port,
                         username=self.smtp_username,
                         password=self.smtp_password,
-                        use_tls=False,
+                        use_tls=True,  # SSL/TLS с самого начала
                         start_tls=False,
+                        tls_context=ssl_context,  # Используем наш SSL контекст
                     )
                 else:
-                    # Для порта 587 используем STARTTLS
+                    # Для порта 587 используем STARTTLS (обычное соединение, затем TLS)
                     await aiosmtplib.send(
                         message,
                         hostname=self.smtp_server,
@@ -159,6 +174,7 @@ class EmailService:
                         username=self.smtp_username,
                         password=self.smtp_password,
                         start_tls=use_tls,
+                        tls_context=ssl_context,  # Используем наш SSL контекст
                     )
                 
                 logger.info(event="email_sent_success", email=email, code=code, message="Email sent successfully")

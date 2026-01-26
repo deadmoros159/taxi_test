@@ -37,14 +37,23 @@ async def get_db() -> AsyncSession:
             await session.close()
 
 
-async def check_db_connection() -> bool:
-    """Проверка подключения к БД"""
-    try:
-        from sqlalchemy import text
-        async with AsyncSessionLocal() as session:
-            await session.execute(text("SELECT 1"))
-            return True
-    except Exception as e:
-        logger.error(f"Database connection check failed: {e}")
-        return False
+async def check_db_connection(max_retries: int = 5, retry_delay: int = 2) -> bool:
+    """Проверка подключения к БД с повторными попытками"""
+    import asyncio
+    from sqlalchemy import text
+    
+    for attempt in range(max_retries):
+        try:
+            async with AsyncSessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+                logger.info(f"Database connection successful (attempt {attempt + 1}/{max_retries})")
+                return True
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Database connection check failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error(f"Database connection check failed after {max_retries} attempts: {e}")
+                return False
+    return False
 

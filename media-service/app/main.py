@@ -50,10 +50,11 @@ async def lifespan(app: FastAPI):
             if settings.ENVIRONMENT != "development":
                 logger.error("Failed to create tables in production mode")
 
-    # Проверяем подключения
-    db_ok = await check_db_connection()
+    # Проверяем подключения с повторными попытками (для Docker сети)
+    logger.info("Checking database connection (with retries)...")
+    db_ok = await check_db_connection(max_retries=10, retry_delay=3)
     if not db_ok:
-        logger.error("Failed to connect to database")
+        logger.error("Failed to connect to database after all retries")
         if settings.ENVIRONMENT != "development":
             raise RuntimeError("Database connection failed")
 

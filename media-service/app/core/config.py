@@ -14,11 +14,11 @@ class Settings(BaseSettings):
     ROOT_PATH: str = ""  # Префикс пути для работы за прокси
 
     # Database
-    POSTGRES_SERVER: str = "localhost"
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "postgres"
-    POSTGRES_DB: str = "media_db"
-    POSTGRES_PORT: int = 5432
+    POSTGRES_SERVER: str = Field(default="localhost", description="PostgreSQL server hostname")
+    POSTGRES_USER: str = Field(default="postgres", description="PostgreSQL username")
+    POSTGRES_PASSWORD: str = Field(default="postgres", description="PostgreSQL password")
+    POSTGRES_DB: str = Field(default="media_db", description="PostgreSQL database name")
+    POSTGRES_PORT: int = Field(default=5432, description="PostgreSQL port")
     DATABASE_URL: Optional[PostgresDsn] = None
 
     @field_validator("DATABASE_URL", mode="before")

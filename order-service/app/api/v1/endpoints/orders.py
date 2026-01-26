@@ -498,31 +498,30 @@ async def update_order_status(
 @router.websocket("/ws/driver/{driver_id}")
 async def websocket_driver_endpoint(
     websocket: WebSocket,
-    driver_id: int,
-    token: Optional[str] = None
+    driver_id: int
 ):
     """
     WebSocket для водителей (уведомления о новых заказах).
     
-    Требуется авторизация через токен в query параметре: ?token=Bearer_xxx
+    Требуется авторизация через Bearer токен в заголовке Authorization: Bearer {token}
     Водитель может подписаться только на свои уведомления.
     """
     # Принимаем соединение
     await websocket.accept()
     
-    # Проверяем токен
-    if not token:
-        await websocket.close(code=1008, reason="Token required")
+    # Получаем токен из заголовка Authorization
+    auth_header = websocket.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Token required in Authorization header")
         return
     
-    # Убираем "Bearer " префикс если есть
-    if token.startswith("Bearer "):
-        token = token[7:]
+    # Извлекаем токен
+    token = auth_header[7:]  # Убираем "Bearer "
     
     # Проверяем токен
     user_data = await verify_token(token)
     if not user_data:
-        await websocket.close(code=1008, reason="Invalid token")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
     
     # Проверяем права доступа: водитель может подписаться только на свои уведомления
@@ -530,11 +529,11 @@ async def websocket_driver_endpoint(
     user_id = user_data.get("id")
     
     if user_role != "driver":
-        await websocket.close(code=1008, reason="Only drivers can connect")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Only drivers can connect")
         return
     
     if user_id != driver_id:
-        await websocket.close(code=1008, reason="Access denied: can only subscribe to your own notifications")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access denied: can only subscribe to your own notifications")
         return
     
     # Подключаем водителя
@@ -552,31 +551,30 @@ async def websocket_driver_endpoint(
 @router.websocket("/ws/order/{order_id}")
 async def websocket_order_endpoint(
     websocket: WebSocket,
-    order_id: int,
-    token: Optional[str] = None
+    order_id: int
 ):
     """
     WebSocket для заказа (обновления для пассажира, водителя или админа).
     
-    Требуется авторизация через токен в query параметре: ?token=Bearer_xxx
+    Требуется авторизация через Bearer токен в заголовке Authorization: Bearer {token}
     Пользователь может подписаться только на свои заказы (пассажир - на свои, водитель - на свои, админ - на любые).
     """
     # Принимаем соединение
     await websocket.accept()
     
-    # Проверяем токен
-    if not token:
-        await websocket.close(code=1008, reason="Token required")
+    # Получаем токен из заголовка Authorization
+    auth_header = websocket.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Token required in Authorization header")
         return
     
-    # Убираем "Bearer " префикс если есть
-    if token.startswith("Bearer "):
-        token = token[7:]
+    # Извлекаем токен
+    token = auth_header[7:]  # Убираем "Bearer "
     
     # Проверяем токен
     user_data = await verify_token(token)
     if not user_data:
-        await websocket.close(code=1008, reason="Invalid token")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
     
     # Проверяем права доступа
@@ -591,17 +589,17 @@ async def websocket_order_endpoint(
             order = await order_repo.get_order_by_id(order_id)
             
             if not order:
-                await websocket.close(code=1008, reason="Order not found")
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Order not found")
                 return
             
             # Проверяем, что пользователь имеет отношение к заказу
             if user_role == "driver":
                 if order.driver_id != user_id:
-                    await websocket.close(code=1008, reason="Access denied: can only subscribe to your own orders")
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access denied: can only subscribe to your own orders")
                     return
             else:  # passenger
                 if order.passenger_id != user_id:
-                    await websocket.close(code=1008, reason="Access denied: can only subscribe to your own orders")
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access denied: can only subscribe to your own orders")
                     return
     
     # Подключаем к заказу

@@ -140,17 +140,12 @@ class EmailService:
             use_ssl = self.smtp_port == 465  # SSL для порта 465
             
             # Создаем SSL контекст
-            # Если указан путь к сертификату - используем его, иначе отключаем проверку (для самоподписанных)
-            if settings.SMTP_SSL_CERT_PATH:
-                # Используем существующий сертификат с сервера
-                ssl_context = ssl.create_default_context(cafile=settings.SMTP_SSL_CERT_PATH)
-                logger.info(event="smtp_using_cert", cert_path=settings.SMTP_SSL_CERT_PATH, message="Using existing SSL certificate")
-            else:
-                # Для самоподписанных сертификатов отключаем проверку
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
-                logger.info(event="smtp_no_cert_verify", message="SSL certificate verification disabled for self-signed certificate")
+            # Для самоподписанных сертификатов всегда отключаем проверку
+            # Даже если указан путь к сертификату, для SMTP с самоподписанными сертификатами нужно отключить проверку
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            logger.info(event="smtp_no_cert_verify", message="SSL certificate verification disabled for self-signed certificate")
             
             try:
                 if use_ssl:

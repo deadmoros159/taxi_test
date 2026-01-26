@@ -184,6 +184,50 @@ services:
     networks:
       - taxi-network
 
+  # ==================== MEDIA SERVICE ====================
+  media-service:
+    build:
+      context: ../media-service
+      dockerfile: Dockerfile
+    container_name: taxi-media-service-prod
+    ports:
+      - "8003:8003"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - ROOT_PATH=/media
+      - POSTGRES_SERVER=postgres-media
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=media_db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-media:5432/media_db
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET_NAME=media
+      - MINIO_SECURE=false
+      - MAX_FILE_SIZE_MB=5
+    depends_on:
+      postgres-media:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - taxi-network
+    volumes:
+      - ../shared:/app/shared:ro
+
   # ==================== DATABASES ====================
   postgres-auth:
     image: postgres:15-alpine
@@ -240,6 +284,46 @@ services:
     networks:
       - taxi-network
 
+  postgres-media:
+    image: postgres:15-alpine
+    container_name: taxi-postgres-media-prod
+    environment:
+      POSTGRES_DB: media_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_media_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
+  # ==================== MINIO (S3-compatible storage) ====================
+  minio:
+    image: minio/minio:latest
+    container_name: taxi-minio-prod
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # API порт
+      - "9001:9001"  # Console порт
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - taxi-network
+
   # ==================== REDIS ====================
   redis:
     image: redis:7-alpine
@@ -264,7 +348,9 @@ volumes:
   postgres_auth_data:
   postgres_driver_data:
   postgres_order_data:
+  postgres_media_data:
   redis_data:
+  minio_data:
 
 networks:
   taxi-network:

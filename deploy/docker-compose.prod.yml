@@ -22,6 +22,7 @@ services:
       - REDIS_DB=0
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-auth:5432/auth_db
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - SMTP_SSL_CERT_PATH=/app/ssl/xhap.ru.fullchain.crt  # Путь к SSL сертификату внутри контейнера
     env_file:
       - ../auth-service/.env
     depends_on:
@@ -40,6 +41,7 @@ services:
       - taxi-network
     volumes:
       - ../shared:/app/shared:ro
+      - /opt/taxi/ssl:/app/ssl:ro  # Монтируем SSL сертификаты с сервера
 
   # ==================== DRIVER SERVICE ====================
   driver-service:

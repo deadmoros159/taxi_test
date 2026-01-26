@@ -21,6 +21,7 @@ class MediaInfoResponse(BaseModel):
     mime_type: str
     size_bytes: int
     uploaded_by: Optional[int] = None
+    url: str = Field(..., description="Полный URL для получения файла")
     created_at: datetime
     updated_at: Optional[datetime] = None
 

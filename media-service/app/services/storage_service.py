@@ -94,10 +94,13 @@ class StorageService:
             logger.error(f"Error deleting file from S3: {e}")
             return False
 
-    def get_file_url(self, media_id: int) -> str:
+    def get_file_url(self, media_id: int, base_url: Optional[str] = None) -> str:
         """Получить URL для доступа к файлу"""
+        from app.core.config import settings
+        if base_url:
+            return f"{base_url}{settings.API_V1_PREFIX}/media/{media_id}"
         # В production можно использовать presigned URLs для безопасности
-        return f"/api/v1/media/{media_id}"
+        return f"{settings.API_V1_PREFIX}/media/{media_id}"
 
 
 # Глобальный экземпляр

@@ -209,6 +209,7 @@ services:
       - MINIO_BUCKET_NAME=media
       - MINIO_SECURE=false
       - MAX_FILE_SIZE_MB=5
+      - MEDIA_BASE_URL=https://xhap.ru/media
     depends_on:
       postgres-media:
         condition: service_healthy

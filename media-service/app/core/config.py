@@ -82,6 +82,12 @@ class Settings(BaseSettings):
         ],
         description="Allowed MIME types for upload"
     )
+    
+    # Media URL Settings
+    MEDIA_BASE_URL: str = Field(
+        default="",
+        description="Base URL for media files (e.g., https://xhap.ru/media). If empty, will be generated from request."
+    )
 
     class Config:
         env_file = ".env"

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Header
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Header, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 import logging
 from io import BytesIO
+from urllib.parse import quote
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -51,6 +52,7 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 @router.post("/upload", response_model=MediaUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     file: UploadFile = File(...),
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -116,12 +118,21 @@ async def upload_file(
         uploaded_by=user_id,
     )
     
+    # Генерируем полный URL
+    if settings.MEDIA_BASE_URL:
+        media_url = f"{settings.MEDIA_BASE_URL}{settings.API_V1_PREFIX}/media/{media_file.id}"
+    elif request:
+        base_url = str(request.base_url).rstrip("/")
+        media_url = f"{base_url}{settings.API_V1_PREFIX}/media/{media_file.id}"
+    else:
+        media_url = f"{settings.API_V1_PREFIX}/media/{media_file.id}"
+    
     return MediaUploadResponse(
         media_id=media_file.id,
         filename=media_file.filename,
         mime_type=media_file.mime_type,
         size_bytes=media_file.size_bytes,
-        url=storage_service.get_file_url(media_file.id),
+        url=media_url,
         created_at=media_file.created_at,
     )
 
@@ -166,11 +177,24 @@ async def get_file(
     
     file_data, mime_type = file_data_mime
     
+    # Кодируем имя файла для HTTP заголовка (RFC 2231)
+    # Используем ASCII-safe имя файла для избежания UnicodeEncodeError
+    safe_filename = media_file.original_filename.encode('ascii', 'ignore').decode('ascii')
+    if not safe_filename:
+        safe_filename = "file"
+    # Если имя файла содержит не-ASCII символы, используем RFC 2231 encoding
+    if media_file.original_filename != safe_filename:
+        # Используем quoted-printable encoding для не-ASCII символов
+        encoded_filename = quote(media_file.original_filename, safe='')
+        content_disposition = f'inline; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}'
+    else:
+        content_disposition = f'inline; filename="{safe_filename}"'
+    
     return Response(
         content=file_data,
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'inline; filename="{media_file.original_filename}"',
+            "Content-Disposition": content_disposition,
             "Content-Length": str(len(file_data)),
         }
     )
@@ -179,6 +203,7 @@ async def get_file(
 @router.get("/{media_id}/info", response_model=MediaInfoResponse)
 async def get_file_info(
     media_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -206,6 +231,15 @@ async def get_file_info(
             detail="Access denied"
         )
     
+    # Генерируем полный URL
+    if settings.MEDIA_BASE_URL:
+        media_url = f"{settings.MEDIA_BASE_URL}{settings.API_V1_PREFIX}/media/{media_file.id}"
+    elif request:
+        base_url = str(request.base_url).rstrip("/")
+        media_url = f"{base_url}{settings.API_V1_PREFIX}/media/{media_file.id}"
+    else:
+        media_url = f"{settings.API_V1_PREFIX}/media/{media_file.id}"
+    
     return MediaInfoResponse(
         id=media_file.id,
         filename=media_file.filename,
@@ -213,6 +247,7 @@ async def get_file_info(
         mime_type=media_file.mime_type,
         size_bytes=media_file.size_bytes,
         uploaded_by=media_file.uploaded_by,
+        url=media_url,
         created_at=media_file.created_at,
         updated_at=media_file.updated_at,
     )

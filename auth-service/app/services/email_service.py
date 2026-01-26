@@ -161,13 +161,15 @@ class EmailService:
                         await smtp.send_message(message)
                 else:
                     # Для порта 587 используем STARTTLS (сначала обычное соединение, затем TLS)
+                    # НЕ передаем tls_context в конструктор, чтобы избежать автоматического применения TLS
+                    # Вызываем starttls() вручную с нашим SSL контекстом
                     async with aiosmtplib.SMTP(
                         hostname=self.smtp_server,
                         port=self.smtp_port,
                         use_tls=False,  # Не используем TLS с самого начала
-                        tls_context=ssl_context,  # SSL контекст для STARTTLS
+                        start_tls=False,  # НЕ вызывать starttls автоматически
                     ) as smtp:
-                        # Явно вызываем starttls с нашим SSL контекстом
+                        # Явно вызываем starttls с нашим SSL контекстом (с отключенной проверкой)
                         await smtp.starttls(tls_context=ssl_context)
                         await smtp.login(self.smtp_username, self.smtp_password)
                         await smtp.send_message(message)

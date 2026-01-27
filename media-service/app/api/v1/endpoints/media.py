@@ -51,8 +51,8 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 
 @router.post("/upload", response_model=MediaUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file(
-    file: UploadFile = File(...),
     request: Request,
+    file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):

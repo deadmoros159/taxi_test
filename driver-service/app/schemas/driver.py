@@ -14,7 +14,9 @@ class VehicleCreate(BaseModel):
     vin: Optional[str] = Field(None, max_length=17)
     seats: int = Field(4, ge=2, le=20)
     vehicle_type: str = Field(..., min_length=1, max_length=30)
-    vehicle_photo_url: Optional[str] = Field(None, description="URL фото автомобиля")
+    vehicle_photo_url: Optional[str] = Field(None, description="(legacy) URL фото автомобиля")
+    vehicle_photo_media_id: Optional[int] = Field(None, description="Media ID фото автомобиля (media-service)")
+    vehicle_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=vehicle_photo) из media-service")
 
 
 class DriverRegisterRequest(BaseModel):
@@ -23,9 +25,15 @@ class DriverRegisterRequest(BaseModel):
     license_number: str = Field(..., min_length=1, max_length=50)
     license_expiry: datetime
     passport_number: str = Field(..., min_length=1, max_length=50)
-    license_photo_url: Optional[str] = Field(None, description="URL фото водительских прав")
-    passport_photo_url: Optional[str] = Field(None, description="URL фото паспорта")
-    driver_photo_url: Optional[str] = Field(None, description="URL фото водителя")
+    license_photo_url: Optional[str] = Field(None, description="(legacy) URL фото водительских прав")
+    passport_photo_url: Optional[str] = Field(None, description="(legacy) URL фото паспорта")
+    driver_photo_url: Optional[str] = Field(None, description="(legacy) URL фото водителя")
+    license_photo_media_id: Optional[int] = Field(None, description="Media ID фото прав (media-service)")
+    passport_photo_media_id: Optional[int] = Field(None, description="Media ID фото паспорта (media-service)")
+    driver_photo_media_id: Optional[int] = Field(None, description="Media ID фото водителя (media-service)")
+    license_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=document) фото прав")
+    passport_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=document) фото паспорта")
+    driver_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=profile_photo) фото водителя")
     vehicle: VehicleCreate
 
 
@@ -41,6 +49,8 @@ class VehicleResponse(BaseModel):
     seats: int
     vehicle_type: str
     vehicle_photo_url: Optional[str]
+    vehicle_photo_media_id: Optional[int] = None
+    vehicle_photo_media_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime]
 
@@ -58,6 +68,12 @@ class DriverResponse(BaseModel):
     license_photo_url: Optional[str]
     passport_photo_url: Optional[str]
     driver_photo_url: Optional[str]
+    license_photo_media_id: Optional[int] = None
+    passport_photo_media_id: Optional[int] = None
+    driver_photo_media_id: Optional[int] = None
+    license_photo_media_id: Optional[int] = None
+    passport_photo_media_id: Optional[int] = None
+    driver_photo_media_id: Optional[int] = None
     status: str
     is_verified: bool
     registered_by: Optional[int]
@@ -83,4 +99,29 @@ class VehicleUpdate(BaseModel):
     vin: Optional[str] = None
     seats: Optional[int] = None
     vehicle_type: Optional[str] = None
+    vehicle_photo_url: Optional[str] = None
+    vehicle_photo_media_id: Optional[int] = None
+
+
+class DriverMediaUpdate(BaseModel):
+    """Обновление медиа-идентификаторов документов/фото водителя"""
+    license_photo_media_id: Optional[int] = None
+    passport_photo_media_id: Optional[int] = None
+    driver_photo_media_id: Optional[int] = None
+    vehicle_photo_url: Optional[str] = None
+    vehicle_photo_media_id: Optional[int] = None
+
+
+class FleetStatsResponse(BaseModel):
+    total_vehicles: int
+
+
+class FleetVehicleItem(BaseModel):
+    vehicle_id: int
+    driver_id: int
+    user_id: int
+    brand: str
+    model: str
+    license_plate: str
+
 

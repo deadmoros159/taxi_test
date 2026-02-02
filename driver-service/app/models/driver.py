@@ -30,6 +30,11 @@ class Driver(Base):
     license_photo_url = Column(String, nullable=True)  # Фото водительских прав
     passport_photo_url = Column(String, nullable=True)  # Фото паспорта
     driver_photo_url = Column(String, nullable=True)  # Фото водителя
+
+    # Медиа ID (media-service). Предпочтительно использовать их вместо *_url
+    license_photo_media_id = Column(Integer, nullable=True, index=True)
+    passport_photo_media_id = Column(Integer, nullable=True, index=True)
+    driver_photo_media_id = Column(Integer, nullable=True, index=True)
     
     # Статус
     status = Column(SQLEnum(DriverStatus), default=DriverStatus.PENDING, nullable=False, index=True)
@@ -68,6 +73,9 @@ class Vehicle(Base):
     
     # Фото автомобиля
     vehicle_photo_url = Column(String, nullable=True)  # Фото автомобиля
+
+    # Медиа ID (media-service). Предпочтительно использовать вместо vehicle_photo_url
+    vehicle_photo_media_id = Column(Integer, nullable=True, index=True)
     
     # Метаданные
     created_at = Column(DateTime(timezone=True), server_default=func.now())

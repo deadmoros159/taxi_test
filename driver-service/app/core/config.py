@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     )
     AUTH_SERVICE_API_KEY: Optional[str] = None  # Для межсервисной аутентификации
 
+    # Media Service (public URL used to store links in DB)
+    MEDIA_SERVICE_PUBLIC_BASE_URL: str = Field(
+        default="",
+        description="Public base URL for media-service, e.g. https://xhap.ru/media (used to build full media URLs from media_id)",
+    )
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

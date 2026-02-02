@@ -6,6 +6,7 @@ import logging
 
 import sys
 import os
+from sqlalchemy import text
 
 # Добавляем shared library в путь
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
@@ -13,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 from app.core.config import settings
 from app.api.v1.endpoints import drivers
 from app.services.auth_client import auth_client
+from app.core.database import engine, Base
 from correlation import set_correlation_id, get_correlation_id
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,17 @@ async def lifespan(app: FastAPI):
     """Lifespan для управления ресурсами"""
     # Startup
     logger.info("Starting Driver Service", version=settings.VERSION)
+    # Создаем таблицы из моделей (без Alembic)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            # Добавляем новые колонки для media_id, если сервис уже в проде
+            await conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS license_photo_media_id INTEGER"))
+            await conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS passport_photo_media_id INTEGER"))
+            await conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS driver_photo_media_id INTEGER"))
+            await conn.execute(text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vehicle_photo_media_id INTEGER"))
+    except Exception as e:
+        logger.warning(f"DB init/alter failed (might be already applied): {e}")
     yield
     
     # Shutdown

@@ -99,6 +99,24 @@ class AuthServiceClient:
         except Exception as e:
             logger.error(f"Error getting user info: {e}", exc_info=True)
             return None
+
+    async def promote_user_to_driver(self, user_id: int, token: str) -> bool:
+        """Перевести пользователя в роль driver (dispatcher/admin) через auth-service"""
+        try:
+            correlation_id = get_correlation_id()
+            headers = {"Authorization": f"Bearer {token}"}
+            if correlation_id:
+                headers["X-Correlation-ID"] = correlation_id
+
+            response = await self.client.patch(
+                f"/api/v1/users/{user_id}/promote-to-driver",
+                headers=headers,
+                json={},  # тело не требуется, но ResilientHTTPClient ожидает json для некоторых реализаций
+            )
+            return response.status_code == 200
+        except Exception as e:
+            logger.error(f"Error promoting user to driver: {e}", exc_info=True)
+            return False
     
     async def close(self):
         """Закрыть HTTP клиент"""

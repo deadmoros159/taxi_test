@@ -249,15 +249,18 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 # Подключаем роутеры
-app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["auth"])
-# Подключаем подроутеры для phone, email и telegram
-app.include_router(auth.phone_router, prefix=f"{settings.API_V1_PREFIX}/auth/phone", tags=["phone-auth"])
-app.include_router(auth.email_router, prefix=f"{settings.API_V1_PREFIX}/auth/email", tags=["email-auth"])
-app.include_router(auth.telegram_router, prefix=f"{settings.API_V1_PREFIX}/auth/telegram", tags=["telegram-auth"])
-app.include_router(auth.admin_router, prefix=f"{settings.API_V1_PREFIX}/auth/admin", tags=["admin-auth"])
+# Основные роутеры авторизации
+app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth")
 
-app.include_router(users.staff_router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["staff"])
-app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["users"])
+# Методы авторизации
+app.include_router(auth.phone_router, prefix=f"{settings.API_V1_PREFIX}/auth/phone", tags=["Phone Authentication"])
+app.include_router(auth.email_router, prefix=f"{settings.API_V1_PREFIX}/auth/email", tags=["Email Authentication"])
+app.include_router(auth.telegram_router, prefix=f"{settings.API_V1_PREFIX}/auth/telegram", tags=["Telegram Authentication"])
+app.include_router(auth.admin_router, prefix=f"{settings.API_V1_PREFIX}/auth/admin", tags=["Admin Authentication"])
+
+# Управление пользователями и сотрудниками
+app.include_router(users.staff_router, prefix=f"{settings.API_V1_PREFIX}/users")
+app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users")
 
 
 # Health check endpoint

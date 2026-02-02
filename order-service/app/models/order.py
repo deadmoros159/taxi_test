@@ -56,6 +56,10 @@ class Order(Base):
     accepted_at = Column(DateTime(timezone=True), nullable=True)  # Когда водитель принял заказ
     completed_at = Column(DateTime(timezone=True), nullable=True)  # Когда заказ завершен
     cancelled_at = Column(DateTime(timezone=True), nullable=True)  # Когда заказ отменен
+
+    # Запланированное время выполнения заказа (для отложенных заказов)
+    # Если None — считаем, что заказ "на сейчас"
+    order_date = Column(DateTime(timezone=True), nullable=True, index=True)
     
     # Связь с долгами
     debts = relationship("DriverDebt", back_populates="order", cascade="all, delete-orphan")

@@ -29,21 +29,12 @@ class OrderRepository:
             end_longitude=order_data.end_longitude,
             end_address=order_data.end_address,
             status=OrderStatus.PENDING,
+            order_date=order_date,
         )
-        # Если указана дата, устанавливаем её (created_at будет установлен автоматически, но можно переопределить)
-        if order_data.order_date:
-            # SQLAlchemy установит created_at автоматически, но мы можем установить через update после создания
-            pass
         
         self.db.add(order)
         await self.db.commit()
         await self.db.refresh(order)
-        
-        # Если указана дата, обновляем created_at
-        if order_data.order_date:
-            order.created_at = order_date
-            await self.db.commit()
-            await self.db.refresh(order)
         
         return order
 
@@ -59,6 +50,36 @@ class OrderRepository:
         result = await self.db.execute(
             select(Order).where(Order.status == OrderStatus.PENDING)
             .order_by(Order.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_active_orders_for_drivers(self) -> List[Order]:
+        """Заказы 'на сейчас' для водителей: PENDING и order_date <= now"""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            select(Order)
+            .where(
+                Order.status == OrderStatus.PENDING,
+                # если order_date NULL — считаем как "на сейчас"
+                (Order.order_date.is_(None)) | (Order.order_date <= now),
+            )
+            .order_by(Order.order_date.desc().nullslast(), Order.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_scheduled_orders_for_drivers(self) -> List[Order]:
+        """Отложенные заказы для водителей: PENDING и order_date > now"""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            select(Order)
+            .where(
+                Order.status == OrderStatus.PENDING,
+                Order.order_date.is_not(None),
+                Order.order_date > now,
+            )
+            .order_by(Order.order_date.asc())
         )
         return list(result.scalars().all())
 

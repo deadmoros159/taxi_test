@@ -4,6 +4,7 @@ Endpoints для управления водителями и их автомо�
 import sys
 import os
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 import logging
@@ -18,7 +19,9 @@ from app.schemas.driver import (
     DriverRegisterRequest,
     DriverResponse,
     DriverStatusUpdate,
-    VehicleUpdate
+    VehicleUpdate,
+    DriverMediaUpdate,
+    VehicleResponse,
 )
 from app.repositories.driver_repository import DriverRepository
 from app.models.driver import Driver, DriverStatus
@@ -107,6 +110,93 @@ def require_driver(
     return current_user
 
 
+@router.get("/fleet/summary")
+async def fleet_summary(
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Автопарк: сколько авто в БД и к каким водителям/пользователям привязаны"""
+    from sqlalchemy import select, func
+    from app.models.driver import Vehicle, Driver
+
+    total = await db.execute(select(func.count(Vehicle.id)))
+    total_count = int(total.scalar() or 0)
+
+    rows = await db.execute(
+        select(Vehicle.id, Vehicle.license_plate, Driver.id, Driver.user_id)
+        .join(Driver, Driver.id == Vehicle.driver_id)
+        .order_by(Vehicle.id.desc())
+        .limit(200)
+    )
+    items = []
+    for vehicle_id, license_plate, driver_id, user_id in rows.all():
+        items.append(
+            {
+                "vehicle_id": vehicle_id,
+                "license_plate": license_plate,
+                "driver_id": driver_id,
+                "user_id": user_id,
+            }
+        )
+
+    return {"total_vehicles": total_count, "items": items}
+
+
+@router.get("/fleet/vehicles/{vehicle_id}", tags=["Admin Panel"])
+async def fleet_vehicle_detail(
+    vehicle_id: int,
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Автопарк: детальная информация по авто + привязка к водителю/пользователю"""
+    from sqlalchemy import select
+    from app.models.driver import Vehicle, Driver
+
+    row = await db.execute(
+        select(Vehicle, Driver)
+        .join(Driver, Driver.id == Vehicle.driver_id)
+        .where(Vehicle.id == vehicle_id)
+    )
+    result = row.first()
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
+
+    vehicle, driver = result
+    return {
+        "vehicle": {
+            "id": vehicle.id,
+            "driver_id": vehicle.driver_id,
+            "brand": vehicle.brand,
+            "model": vehicle.model,
+            "year": vehicle.year,
+            "color": vehicle.color,
+            "license_plate": vehicle.license_plate,
+            "vin": vehicle.vin,
+            "seats": vehicle.seats,
+            "vehicle_type": vehicle.vehicle_type,
+            "vehicle_photo_url": vehicle.vehicle_photo_url,
+            "vehicle_photo_media_id": vehicle.vehicle_photo_media_id,
+            "created_at": vehicle.created_at,
+            "updated_at": vehicle.updated_at,
+        },
+        "driver": {
+            "id": driver.id,
+            "user_id": driver.user_id,
+            "status": driver.status.value,
+            "is_verified": driver.is_verified,
+            "registered_by": driver.registered_by,
+            "registered_at": driver.registered_at,
+            "license_number": driver.license_number,
+            "license_expiry": driver.license_expiry,
+            "passport_number": driver.passport_number,
+            "license_photo_media_id": driver.license_photo_media_id,
+            "passport_photo_media_id": driver.passport_photo_media_id,
+            "driver_photo_media_id": driver.driver_photo_media_id,
+        },
+    }
+
 @router.post("/drivers/register", response_model=DriverResponse, status_code=status.HTTP_201_CREATED)
 async def register_driver(
     request: DriverRegisterRequest,
@@ -165,16 +255,18 @@ async def register_driver(
         vehicle_data=request.vehicle,
         license_photo_url=request.license_photo_url,
         passport_photo_url=request.passport_photo_url,
-        driver_photo_url=request.driver_photo_url
+        driver_photo_url=request.driver_photo_url,
+        license_photo_media_id=request.license_photo_media_id,
+        passport_photo_media_id=request.passport_photo_media_id,
+        driver_photo_media_id=request.driver_photo_media_id,
     )
     
-    # Логируем, что нужно обновить роль в auth-service
-    # В будущем это можно сделать через событие (Event-Driven)
-    logger.info(
-        f"Driver registered: user_id={request.user_id}, driver_id={driver.id}. "
-        f"NOTE: User role should be updated to 'driver' in auth-service separately. "
-        f"Use PATCH /api/v1/users/{request.user_id}/role in auth-service."
-    )
+    # Сразу переводим пользователя в роль driver (dispatcher/admin имеет права через require_driver_management)
+    promoted = await auth_client.promote_user_to_driver(request.user_id, token)
+    if not promoted:
+        logger.warning(
+            f"Driver created in driver-service but failed to promote user role in auth-service: user_id={request.user_id}"
+        )
     
     return DriverResponse(
         id=driver.id,
@@ -186,11 +278,17 @@ async def register_driver(
         is_verified=driver.is_verified,
         registered_by=driver.registered_by,
         registered_at=driver.registered_at,
+        license_photo_url=driver.license_photo_url,
+        passport_photo_url=driver.passport_photo_url,
+        driver_photo_url=driver.driver_photo_url,
+        license_photo_media_id=driver.license_photo_media_id,
+        passport_photo_media_id=driver.passport_photo_media_id,
+        driver_photo_media_id=driver.driver_photo_media_id,
         vehicle=driver.vehicle
     )
 
 
-@router.get("/drivers", response_model=List[DriverResponse])
+@router.get("/drivers", response_model=List[DriverResponse], tags=["Admin Panel"])
 async def get_all_drivers(
     request: Request,
     current_user: dict = Depends(require_dispatcher_or_admin),
@@ -217,6 +315,7 @@ async def get_all_drivers(
                 seats=driver.vehicle.seats,
                 vehicle_type=driver.vehicle.vehicle_type,
                 vehicle_photo_url=driver.vehicle.vehicle_photo_url,
+                vehicle_photo_media_id=driver.vehicle.vehicle_photo_media_id,
                 created_at=driver.vehicle.created_at,
                 updated_at=driver.vehicle.updated_at
             )
@@ -230,6 +329,9 @@ async def get_all_drivers(
             license_photo_url=driver.license_photo_url,
             passport_photo_url=driver.passport_photo_url,
             driver_photo_url=driver.driver_photo_url,
+            license_photo_media_id=driver.license_photo_media_id,
+            passport_photo_media_id=driver.passport_photo_media_id,
+            driver_photo_media_id=driver.driver_photo_media_id,
             status=driver.status.value,
             is_verified=driver.is_verified,
             registered_by=driver.registered_by,
@@ -267,6 +369,12 @@ async def get_my_driver_info(
         is_verified=driver.is_verified,
         registered_by=driver.registered_by,
         registered_at=driver.registered_at,
+        license_photo_url=driver.license_photo_url,
+        passport_photo_url=driver.passport_photo_url,
+        driver_photo_url=driver.driver_photo_url,
+        license_photo_media_id=driver.license_photo_media_id,
+        passport_photo_media_id=driver.passport_photo_media_id,
+        driver_photo_media_id=driver.driver_photo_media_id,
         vehicle=driver.vehicle
     )
 
@@ -306,6 +414,7 @@ async def update_driver_status(
             seats=updated_driver.vehicle.seats,
             vehicle_type=updated_driver.vehicle.vehicle_type,
             vehicle_photo_url=updated_driver.vehicle.vehicle_photo_url,
+            vehicle_photo_media_id=updated_driver.vehicle.vehicle_photo_media_id,
             created_at=updated_driver.vehicle.created_at,
             updated_at=updated_driver.vehicle.updated_at
         )
@@ -319,9 +428,279 @@ async def update_driver_status(
         license_photo_url=updated_driver.license_photo_url,
         passport_photo_url=updated_driver.passport_photo_url,
         driver_photo_url=updated_driver.driver_photo_url,
+        license_photo_media_id=updated_driver.license_photo_media_id,
+        passport_photo_media_id=updated_driver.passport_photo_media_id,
+        driver_photo_media_id=updated_driver.driver_photo_media_id,
         status=updated_driver.status.value,
         is_verified=updated_driver.is_verified,
         registered_by=updated_driver.registered_by,
         registered_at=updated_driver.registered_at,
         vehicle=vehicle_response
     )
+
+
+@router.patch("/drivers/{driver_id}/vehicle", response_model=DriverResponse)
+async def update_vehicle(
+    driver_id: int,
+    payload: VehicleUpdate,
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Обновить данные автомобиля водителя (включая фото через media_id)"""
+    driver_repo = DriverRepository(db)
+    driver = await driver_repo.get_by_id(driver_id)
+    if not driver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+
+    vehicle = await driver_repo.update_vehicle(
+        driver_id=driver_id,
+        brand=payload.brand,
+        model=payload.model,
+        year=payload.year,
+        color=payload.color,
+        license_plate=payload.license_plate,
+        vin=payload.vin,
+        seats=payload.seats,
+        vehicle_type=payload.vehicle_type,
+        vehicle_photo_url=payload.vehicle_photo_url,
+        vehicle_photo_media_id=payload.vehicle_photo_media_id,
+    )
+    if not vehicle:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
+
+    await db.refresh(driver)
+    return DriverResponse(
+        id=driver.id,
+        user_id=driver.user_id,
+        license_number=driver.license_number,
+        license_expiry=driver.license_expiry,
+        passport_number=driver.passport_number,
+        license_photo_url=driver.license_photo_url,
+        passport_photo_url=driver.passport_photo_url,
+        driver_photo_url=driver.driver_photo_url,
+        license_photo_media_id=driver.license_photo_media_id,
+        passport_photo_media_id=driver.passport_photo_media_id,
+        driver_photo_media_id=driver.driver_photo_media_id,
+        status=driver.status.value,
+        is_verified=driver.is_verified,
+        registered_by=driver.registered_by,
+        registered_at=driver.registered_at,
+        vehicle=vehicle,
+    )
+
+
+@router.patch("/drivers/{driver_id}/media", response_model=DriverResponse)
+async def update_driver_media(
+    driver_id: int,
+    payload: DriverMediaUpdate,
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Обновить медиа (ID) документов/фото водителя"""
+    driver_repo = DriverRepository(db)
+    updated_driver = await driver_repo.update_driver_media(
+        driver_id,
+        license_photo_media_id=payload.license_photo_media_id,
+        passport_photo_media_id=payload.passport_photo_media_id,
+        driver_photo_media_id=payload.driver_photo_media_id,
+    )
+    if not updated_driver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+
+    return DriverResponse(
+        id=updated_driver.id,
+        user_id=updated_driver.user_id,
+        license_number=updated_driver.license_number,
+        license_expiry=updated_driver.license_expiry,
+        passport_number=updated_driver.passport_number,
+        license_photo_url=updated_driver.license_photo_url,
+        passport_photo_url=updated_driver.passport_photo_url,
+        driver_photo_url=updated_driver.driver_photo_url,
+        license_photo_media_id=updated_driver.license_photo_media_id,
+        passport_photo_media_id=updated_driver.passport_photo_media_id,
+        driver_photo_media_id=updated_driver.driver_photo_media_id,
+        status=updated_driver.status.value,
+        is_verified=updated_driver.is_verified,
+        registered_by=updated_driver.registered_by,
+        registered_at=updated_driver.registered_at,
+        vehicle=updated_driver.vehicle,
+    )
+
+
+# ==================== ADMIN PANEL ENDPOINTS ====================
+
+@router.get("/admin/drivers/{driver_id}", response_model=DriverResponse, tags=["Admin Panel"])
+async def get_driver_by_id_admin(
+    driver_id: int,
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить информацию о водителе по ID (для админ-панели)"""
+    driver_repo = DriverRepository(db)
+    driver = await driver_repo.get_by_id(driver_id)
+    
+    if not driver:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Driver not found"
+        )
+    
+    from app.schemas.driver import VehicleResponse
+    
+    vehicle_response = None
+    if driver.vehicle:
+        vehicle_response = VehicleResponse(
+            id=driver.vehicle.id,
+            brand=driver.vehicle.brand,
+            model=driver.vehicle.model,
+            year=driver.vehicle.year,
+            color=driver.vehicle.color,
+            license_plate=driver.vehicle.license_plate,
+            vin=driver.vehicle.vin,
+            seats=driver.vehicle.seats,
+            vehicle_type=driver.vehicle.vehicle_type,
+            vehicle_photo_url=driver.vehicle.vehicle_photo_url,
+            vehicle_photo_media_id=driver.vehicle.vehicle_photo_media_id,
+            created_at=driver.vehicle.created_at,
+            updated_at=driver.vehicle.updated_at
+        )
+    
+    return DriverResponse(
+        id=driver.id,
+        user_id=driver.user_id,
+        license_number=driver.license_number,
+        license_expiry=driver.license_expiry,
+        passport_number=driver.passport_number,
+        license_photo_url=driver.license_photo_url,
+        passport_photo_url=driver.passport_photo_url,
+        driver_photo_url=driver.driver_photo_url,
+        license_photo_media_id=driver.license_photo_media_id,
+        passport_photo_media_id=driver.passport_photo_media_id,
+        driver_photo_media_id=driver.driver_photo_media_id,
+        status=driver.status.value,
+        is_verified=driver.is_verified,
+        registered_by=driver.registered_by,
+        registered_at=driver.registered_at,
+        vehicle=vehicle_response
+    )
+
+
+@router.delete("/admin/drivers/{driver_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin Panel"])
+async def delete_driver_admin(
+    driver_id: int,
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Удалить водителя (для админ-панели)"""
+    driver_repo = DriverRepository(db)
+    driver = await driver_repo.get_by_id(driver_id)
+    
+    if not driver:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Driver not found"
+        )
+    
+    success = await driver_repo.delete_driver(driver_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete driver"
+        )
+    
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/admin/vehicles", response_model=List[VehicleResponse], tags=["Admin Panel"])
+async def get_all_vehicles_admin(
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить список всех автомобилей (для админ-панели)"""
+    driver_repo = DriverRepository(db)
+    vehicles = await driver_repo.get_all_vehicles()
+    
+    return [
+        VehicleResponse(
+            id=v.id,
+            brand=v.brand,
+            model=v.model,
+            year=v.year,
+            color=v.color,
+            license_plate=v.license_plate,
+            vin=v.vin,
+            seats=v.seats,
+            vehicle_type=v.vehicle_type,
+            vehicle_photo_url=v.vehicle_photo_url,
+            vehicle_photo_media_id=v.vehicle_photo_media_id,
+            created_at=v.created_at,
+            updated_at=v.updated_at
+        )
+        for v in vehicles
+    ]
+
+
+@router.get("/admin/vehicles/{vehicle_id}", response_model=VehicleResponse, tags=["Admin Panel"])
+async def get_vehicle_by_id_admin(
+    vehicle_id: int,
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить информацию об автомобиле по ID (для админ-панели)"""
+    driver_repo = DriverRepository(db)
+    vehicle = await driver_repo.get_vehicle_by_id(vehicle_id)
+    
+    if not vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found"
+        )
+    
+    return VehicleResponse(
+        id=vehicle.id,
+        brand=vehicle.brand,
+        model=vehicle.model,
+        year=vehicle.year,
+        color=vehicle.color,
+        license_plate=vehicle.license_plate,
+        vin=vehicle.vin,
+        seats=vehicle.seats,
+        vehicle_type=vehicle.vehicle_type,
+        vehicle_photo_url=vehicle.vehicle_photo_url,
+        vehicle_photo_media_id=vehicle.vehicle_photo_media_id,
+        created_at=vehicle.created_at,
+        updated_at=vehicle.updated_at
+    )
+
+
+@router.delete("/admin/vehicles/{vehicle_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin Panel"])
+async def delete_vehicle_admin(
+    vehicle_id: int,
+    request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Удалить автомобиль (для админ-панели)"""
+    driver_repo = DriverRepository(db)
+    vehicle = await driver_repo.get_vehicle_by_id(vehicle_id)
+    
+    if not vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found"
+        )
+    
+    success = await driver_repo.delete_vehicle(vehicle_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete vehicle"
+        )
+    
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -11,11 +11,11 @@ class Settings(BaseSettings):
     # Project
     PROJECT_NAME: str = "Taxi Admin Service"
     VERSION: str = "1.0.0"
-    
+
     # API
     API_V1_PREFIX: str = "/api/v1"
     ROOT_PATH: str = "/admin"  # Префикс для работы за Nginx прокси
-    
+
     # Auth Service
     AUTH_SERVICE_URL: str = Field(
         default="http://auth-service:8000",
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     
     # Logging
     LOG_LEVEL: str = "INFO"
-    
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

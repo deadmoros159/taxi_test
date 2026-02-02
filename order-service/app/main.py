@@ -53,6 +53,13 @@ async def lifespan(app: FastAPI):
             )
             # Затем создаем таблицы
             await conn.run_sync(Base.metadata.create_all)
+            # Добавляем order_date для отложенных заказов (без Alembic)
+            await conn.execute(
+                text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_date TIMESTAMPTZ")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_orders_order_date ON orders (order_date)")
+            )
         logger.info("Database tables created successfully")
     except Exception as e:
         error_str = str(e).lower()
@@ -101,7 +108,7 @@ app.add_middleware(
 )
 
 # Подключаем роутеры
-app.include_router(orders.router, prefix=f"{settings.API_V1_PREFIX}/orders", tags=["orders"])
+app.include_router(orders.router, prefix=f"{settings.API_V1_PREFIX}/orders")
 
 
 # Health check endpoint

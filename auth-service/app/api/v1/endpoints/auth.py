@@ -502,7 +502,7 @@ async def admin_login(
     )
 
 
-@router.post("/refresh", response_model=TokensResponse)
+@router.post("/refresh", response_model=TokensResponse, tags=["Authentication"])
 async def refresh_tokens(
         request: Request,
         token_request: RefreshTokenRequest,
@@ -533,7 +533,7 @@ async def refresh_tokens(
     )
 
 
-@router.post("/logout")
+@router.post("/logout", tags=["Authentication"])
 async def logout(
         request: Request,
         token_request: RefreshTokenRequest,
@@ -556,7 +556,7 @@ async def logout(
     return {"message": "Successfully logged out"}
 
 
-@router.get("/verify")
+@router.get("/verify", tags=["Authentication"])
 async def verify_token(
     current_user = Depends(get_current_user)
 ):

@@ -90,7 +90,7 @@ async def get_user_info(user_id: int, token: str) -> Optional[dict]:
             return None
 
 
-@router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED, tags=["Orders"])
 async def create_order(
     order_data: OrderCreate,
     db: AsyncSession = Depends(get_db),
@@ -117,7 +117,7 @@ async def create_order(
     return order
 
 
-@router.get("/active", response_model=List[OrderResponse])
+@router.get("/active", response_model=List[OrderResponse], tags=["Orders"])
 async def get_active_orders(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
@@ -135,11 +135,28 @@ async def get_active_orders(
         )
     
     order_repo = OrderRepository(db)
-    orders = await order_repo.get_pending_orders()
-    return orders
+    return await order_repo.get_active_orders_for_drivers()
 
 
-@router.get("/pending", response_model=List[OrderResponse])
+@router.get("/scheduled", response_model=List[OrderResponse], tags=["Scheduled Orders"])
+async def get_scheduled_orders(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Отложенные заказы: пользователь создал заказ на будущее время.
+    Доступно для водителей (чтобы выбрать заказ заранее).
+    """
+    if current_user.get("role") != "driver":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only drivers can view scheduled orders"
+        )
+    order_repo = OrderRepository(db)
+    return await order_repo.get_scheduled_orders_for_drivers()
+
+
+@router.get("/pending", response_model=List[OrderResponse], tags=["Orders"])
 async def get_pending_orders(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
@@ -158,7 +175,7 @@ async def get_pending_orders(
     return orders
 
 
-@router.post("/{order_id}/accept", response_model=OrderResponse)
+@router.post("/{order_id}/accept", response_model=OrderResponse, tags=["Orders"])
 async def accept_order(
     order_id: int,
     accept_data: OrderAccept,
@@ -221,7 +238,7 @@ async def accept_order(
     return order
 
 
-@router.post("/{order_id}/cancel", response_model=OrderResponse)
+@router.post("/{order_id}/cancel", response_model=OrderResponse, tags=["Orders"])
 async def cancel_order(
     order_id: int,
     cancel_data: OrderCancel,
@@ -256,7 +273,7 @@ async def cancel_order(
     return order
 
 
-@router.post("/{order_id}/complete", response_model=OrderResponse)
+@router.post("/{order_id}/complete", response_model=OrderResponse, tags=["Orders"])
 async def complete_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
@@ -288,7 +305,7 @@ async def complete_order(
     return order
 
 
-@router.get("/my-orders", response_model=List[OrderResponse])
+@router.get("/my-orders", response_model=List[OrderResponse], tags=["Orders"])
 async def get_my_orders(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
@@ -306,7 +323,7 @@ async def get_my_orders(
     return orders
 
 
-@router.get("/all", response_model=List[OrderResponse])
+@router.get("/all", response_model=List[OrderResponse], tags=["Order Management"])
 async def get_all_orders(
     status: Optional[str] = None,
     limit: int = 100,
@@ -338,7 +355,7 @@ async def get_all_orders(
     return orders
 
 
-@router.get("/{order_id}", response_model=OrderResponse)
+@router.get("/{order_id}", response_model=OrderResponse, tags=["Orders"])
 async def get_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
@@ -377,7 +394,7 @@ async def get_order(
     return order
 
 
-@router.get("/{order_id}/admin", response_model=OrderDetailAdminResponse)
+@router.get("/{order_id}/admin", response_model=OrderDetailAdminResponse, tags=["Order Management"])
 async def get_order_detail_admin(
     order_id: int,
     db: AsyncSession = Depends(get_db),
@@ -438,7 +455,7 @@ async def get_order_detail_admin(
     )
 
 
-@router.patch("/{order_id}/status", response_model=OrderResponse)
+@router.patch("/{order_id}/status", response_model=OrderResponse, tags=["Order Management"])
 async def update_order_status(
     order_id: int,
     status_update: OrderStatusUpdate,
@@ -611,4 +628,68 @@ async def websocket_order_endpoint(
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         await websocket_manager.disconnect_order(websocket, order_id)
+
+
+# ==================== WebSocket Documentation ====================
+
+@router.get("/ws/info", tags=["WebSocket"])
+async def websocket_info():
+    """
+    Информация о WebSocket эндпоинтах для real-time обновлений.
+    
+    WebSocket эндпоинты не отображаются в OpenAPI/Swagger документации,
+    но доступны для использования:
+    
+    1. **ws://host/api/v1/orders/ws/driver/{driver_id}**
+       - Для водителей: получение уведомлений о новых заказах
+       - Требуется авторизация: Bearer токен в заголовке Authorization
+       - Формат: `Authorization: Bearer {token}`
+       - Водитель может подписаться только на свои уведомления
+       - Heartbeat: отправьте "ping" для получения "pong"
+    
+    2. **ws://host/api/v1/orders/ws/order/{order_id}**
+       - Для пассажиров, водителей и админов: обновления по конкретному заказу
+       - Требуется авторизация: Bearer токен в заголовке Authorization
+       - Формат: `Authorization: Bearer {token}`
+       - Пассажир может подписаться только на свои заказы
+       - Водитель может подписаться только на свои заказы
+       - Админы и диспетчеры могут подписаться на любые заказы
+       - Heartbeat: отправьте "ping" для получения "pong"
+    
+    **Пример подключения (JavaScript):**
+    ```javascript
+    const ws = new WebSocket('ws://host/api/v1/orders/ws/driver/123');
+    ws.onopen = () => {
+        ws.send(JSON.stringify({type: 'auth', token: 'your_token'}));
+    };
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('Received:', data);
+    };
+    ```
+    
+    **Типы сообщений:**
+    - `new_order` - новый заказ доступен для водителя
+    - `order_update` - обновление статуса заказа
+    - `order_accepted` - заказ принят другим водителем
+    """
+    return {
+        "websocket_endpoints": {
+            "driver_notifications": {
+                "path": "/api/v1/orders/ws/driver/{driver_id}",
+                "description": "WebSocket для водителей - уведомления о новых заказах",
+                "authentication": "Bearer token в заголовке Authorization",
+                "access": "Только водители, только свои уведомления",
+                "message_types": ["new_order", "order_accepted"]
+            },
+            "order_updates": {
+                "path": "/api/v1/orders/ws/order/{order_id}",
+                "description": "WebSocket для обновлений по конкретному заказу",
+                "authentication": "Bearer token в заголовке Authorization",
+                "access": "Пассажиры - свои заказы, водители - свои заказы, админы - любые",
+                "message_types": ["order_update"]
+            }
+        },
+        "note": "WebSocket эндпоинты используют протокол WebSocket и не отображаются в REST API документации"
+    }
 

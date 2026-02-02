@@ -115,3 +115,17 @@ class UserRepository:
         """Обновить Firebase UID"""
         user = await self.update_user(user_id, firebase_uid=firebase_uid)
         return user is not None
+
+    async def get_all_users(self, role: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[User]:
+        """Получить всех пользователей с фильтрацией по роли"""
+        from sqlalchemy.future import select
+        stmt = select(User)
+        if role:
+            stmt = stmt.where(User.role == role)
+        stmt = stmt.order_by(User.created_at.desc()).limit(limit).offset(offset)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_users_by_role(self, role: str, limit: int = 100, offset: int = 0) -> List[User]:
+        """Получить пользователей по роли"""
+        return await self.get_all_users(role=role, limit=limit, offset=offset)

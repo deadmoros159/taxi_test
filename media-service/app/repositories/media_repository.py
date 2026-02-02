@@ -18,6 +18,7 @@ class MediaRepository:
         mime_type: str,
         size_bytes: int,
         s3_key: str,
+        tag,
         uploaded_by: Optional[int] = None,
     ) -> MediaFile:
         """Создать запись о файле в БД"""
@@ -27,6 +28,7 @@ class MediaRepository:
             mime_type=mime_type,
             size_bytes=size_bytes,
             s3_key=s3_key,
+            tag=tag,
             uploaded_by=uploaded_by,
         )
         self.db.add(media_file)

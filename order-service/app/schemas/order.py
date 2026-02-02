@@ -38,6 +38,7 @@ class OrderResponse(BaseModel):
     updated_at: Optional[datetime] = None
     accepted_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    order_date: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -88,6 +89,7 @@ class OrderDetailAdminResponse(BaseModel):
     accepted_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
+    order_date: Optional[datetime] = None
     
     # Полная информация о пассажире
     passenger_id: int

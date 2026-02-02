@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from typing import Optional, List
 from app.models.driver import Driver, Vehicle, DriverStatus
 from app.schemas.driver import VehicleCreate
@@ -46,7 +46,10 @@ class DriverRepository:
         vehicle_data: VehicleCreate,
         license_photo_url: Optional[str] = None,
         passport_photo_url: Optional[str] = None,
-        driver_photo_url: Optional[str] = None
+        driver_photo_url: Optional[str] = None,
+        license_photo_media_id: Optional[int] = None,
+        passport_photo_media_id: Optional[int] = None,
+        driver_photo_media_id: Optional[int] = None,
     ) -> Driver:
         """Создать водителя с автомобилем"""
         # Создаем водителя
@@ -58,6 +61,9 @@ class DriverRepository:
             license_photo_url=license_photo_url,
             passport_photo_url=passport_photo_url,
             driver_photo_url=driver_photo_url,
+            license_photo_media_id=license_photo_media_id,
+            passport_photo_media_id=passport_photo_media_id,
+            driver_photo_media_id=driver_photo_media_id,
             registered_by=registered_by,
             status=DriverStatus.PENDING,
             is_verified=False
@@ -76,7 +82,8 @@ class DriverRepository:
             vin=vehicle_data.vin,
             seats=vehicle_data.seats,
             vehicle_type=vehicle_data.vehicle_type,
-            vehicle_photo_url=vehicle_data.vehicle_photo_url
+            vehicle_photo_url=vehicle_data.vehicle_photo_url,
+            vehicle_photo_media_id=getattr(vehicle_data, "vehicle_photo_media_id", None),
         )
         self.db.add(vehicle)
         
@@ -85,6 +92,37 @@ class DriverRepository:
         await self.db.refresh(vehicle)
         
         logger.info(f"Driver created: {driver.id} for user {user_id}")
+        return driver
+
+    async def update_vehicle(self, driver_id: int, **fields) -> Optional[Vehicle]:
+        """Обновить данные автомобиля по driver_id"""
+        stmt = select(Vehicle).where(Vehicle.driver_id == driver_id)
+        result = await self.db.execute(stmt)
+        vehicle = result.scalar_one_or_none()
+        if not vehicle:
+            return None
+
+        for key, value in fields.items():
+            if value is not None and hasattr(vehicle, key):
+                setattr(vehicle, key, value)
+            # Разрешаем явное удаление фото через null
+            if value is None and key in ["vehicle_photo_url", "vehicle_photo_media_id"] and hasattr(vehicle, key):
+                setattr(vehicle, key, None)
+
+        await self.db.commit()
+        await self.db.refresh(vehicle)
+        return vehicle
+
+    async def update_driver_media(self, driver_id: int, **fields) -> Optional[Driver]:
+        """Обновить media_id полей у водителя"""
+        driver = await self.get_by_id(driver_id)
+        if not driver:
+            return None
+        for key, value in fields.items():
+            if hasattr(driver, key):
+                setattr(driver, key, value)
+        await self.db.commit()
+        await self.db.refresh(driver)
         return driver
 
     async def update_status(self, driver_id: int, new_status: DriverStatus) -> Optional[Driver]:
@@ -108,4 +146,57 @@ class DriverRepository:
         await self.db.execute(stmt)
         await self.db.commit()
         return await self.get_by_id(driver_id)
+
+    async def delete_driver(self, driver_id: int) -> bool:
+        """Удалить водителя (автомобиль удалится каскадно)"""
+        try:
+            driver = await self.get_by_id(driver_id)
+            if not driver:
+                return False
+            
+            # Удаляем водителя (vehicle удалится автоматически через cascade)
+            stmt = delete(Driver).where(Driver.id == driver_id)
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            
+            deleted = result.rowcount > 0
+            if deleted:
+                logger.info(f"Driver deleted: {driver_id}")
+            return deleted
+        except Exception as e:
+            logger.error(f"Error deleting driver {driver_id}: {e}")
+            await self.db.rollback()
+            return False
+
+    async def get_all_vehicles(self) -> List[Vehicle]:
+        """Получить все автомобили"""
+        stmt = select(Vehicle).order_by(Vehicle.created_at.desc())
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_vehicle_by_id(self, vehicle_id: int) -> Optional[Vehicle]:
+        """Получить автомобиль по ID"""
+        stmt = select(Vehicle).where(Vehicle.id == vehicle_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def delete_vehicle(self, vehicle_id: int) -> bool:
+        """Удалить автомобиль"""
+        try:
+            vehicle = await self.get_vehicle_by_id(vehicle_id)
+            if not vehicle:
+                return False
+            
+            stmt = delete(Vehicle).where(Vehicle.id == vehicle_id)
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            
+            deleted = result.rowcount > 0
+            if deleted:
+                logger.info(f"Vehicle deleted: {vehicle_id}")
+            return deleted
+        except Exception as e:
+            logger.error(f"Error deleting vehicle {vehicle_id}: {e}")
+            await self.db.rollback()
+            return False
 

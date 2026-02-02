@@ -131,41 +131,5 @@ async def get_drivers_stats(
     return stats
 
 
-@router.get("/drivers")
-async def get_all_drivers(
-    current_user: dict = Depends(verify_admin_token)
-):
-    """
-    Получить список всех водителей
-    Доступно только для админов и диспетчеров (требуется авторизация)
-    """
-    user = current_user
-    
-    aggregation = AggregationService()
-    drivers = await aggregation.get_all_drivers(user.get("token", ""))
-    
-    return {"drivers": drivers, "total": len(drivers)}
-
-
-@router.get("/orders")
-async def get_all_orders(
-    status: Optional[str] = None,
-    limit: int = 100,
-    current_user: dict = Depends(verify_admin_token)
-):
-    """
-    Получить список всех заказов
-    Доступно только для админов и диспетчеров (требуется авторизация)
-    """
-    user = current_user
-    
-    aggregation = AggregationService()
-    orders = await aggregation.get_all_orders(
-        user.get("token", ""),
-        status=status,
-        limit=limit
-    )
-    
-    return {"orders": orders, "total": len(orders)}
 
 

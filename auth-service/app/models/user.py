@@ -17,6 +17,10 @@ class User(Base):
     is_verified = Column(Boolean, default=False)
     telegram_user_id = Column(BigInteger, unique=True, index=True, nullable=True)  # ID пользователя в Telegram (может быть больше int32)
     telegram_username = Column(String, nullable=True)  # Username в Telegram
+    
+    # Фото профиля (через media-service)
+    photo_id = Column(Integer, nullable=True, index=True)  # ID фото профиля в media-service
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

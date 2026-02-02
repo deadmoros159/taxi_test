@@ -110,7 +110,7 @@ def create_fastapi_app() -> FastAPI:
         title="Telegram Bot Service",
         version="1.0.0",
         description="Сервис Telegram бота для авторизации и управления заказами",
-        openapi_url="/openapi.json",
+        openapi_url="/openapi.json",  # Путь относительно root_path
         docs_url="/docs",
         redoc_url="/redoc",
         root_path="/telegram",  # Префикс для работы через Nginx

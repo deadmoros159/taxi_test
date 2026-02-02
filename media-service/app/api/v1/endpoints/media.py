@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Header, Request, Form
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from app.repositories.media_repository import MediaRepository
 from app.services.storage_service import storage_service
 from app.services.auth_client import AuthClient
 from app.schemas.media import MediaUploadResponse, MediaInfoResponse, MediaFileResponse
+from app.models.media import MediaTag
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 async def upload_file(
     request: Request,
     file: UploadFile = File(...),
+    tag: MediaTag = Form(MediaTag.DOCUMENT),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -115,6 +117,7 @@ async def upload_file(
         mime_type=mime_type,
         size_bytes=file_size,
         s3_key=s3_key,
+        tag=tag,
         uploaded_by=user_id,
     )
     
@@ -132,6 +135,7 @@ async def upload_file(
         filename=media_file.filename,
         mime_type=media_file.mime_type,
         size_bytes=media_file.size_bytes,
+        tag=media_file.tag,
         url=media_url,
         created_at=media_file.created_at,
     )
@@ -247,6 +251,7 @@ async def get_file_info(
         mime_type=media_file.mime_type,
         size_bytes=media_file.size_bytes,
         uploaded_by=media_file.uploaded_by,
+        tag=media_file.tag,
         url=media_url,
         created_at=media_file.created_at,
         updated_at=media_file.updated_at,

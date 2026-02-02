@@ -5,7 +5,7 @@ import logging
 import structlog
 
 from app.core.config import settings
-from app.api.v1.endpoints import dashboard
+from app.api.v1.endpoints import dashboard, database
 
 # Настройка логирования
 structlog.configure(
@@ -62,6 +62,7 @@ app.add_middleware(
 
 # Подключаем роутеры
 app.include_router(dashboard.router, prefix=f"{settings.API_V1_PREFIX}/admin", tags=["admin"])
+app.include_router(database.router, prefix=f"{settings.API_V1_PREFIX}/db", tags=["database"])
 
 
 # Health check endpoint

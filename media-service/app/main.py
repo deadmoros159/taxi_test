@@ -4,10 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import structlog
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import engine, Base, check_db_connection
 from app.api.v1.endpoints import router as media_router
+from app.models.media import MediaTag
 
 # Настройка логирования
 structlog.configure(
@@ -40,6 +42,17 @@ async def lifespan(app: FastAPI):
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # Без Alembic: гарантируем наличие колонки tag + индекса
+            await conn.execute(
+                text(
+                    "ALTER TABLE media_files "
+                    "ADD COLUMN IF NOT EXISTS tag VARCHAR(32) NOT NULL DEFAULT :default_tag"
+                ),
+                {"default_tag": MediaTag.DOCUMENT.value},
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_media_files_tag ON media_files (tag)")
+            )
         logger.info("Database tables created successfully")
     except Exception as e:
         error_str = str(e).lower()

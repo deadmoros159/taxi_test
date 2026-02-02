@@ -27,64 +27,76 @@ def upgrade() -> None:
         END $$;
     """)
     
-    # Создаем таблицу orders
-    op.create_table(
-        'orders',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('passenger_id', sa.Integer(), nullable=False),
-        sa.Column('driver_id', sa.Integer(), nullable=True),
-        sa.Column('start_latitude', sa.Float(), nullable=False),
-        sa.Column('start_longitude', sa.Float(), nullable=False),
-        sa.Column('start_address', sa.String(), nullable=False),
-        sa.Column('end_latitude', sa.Float(), nullable=True),
-        sa.Column('end_longitude', sa.Float(), nullable=True),
-        sa.Column('end_address', sa.String(), nullable=True),
-        sa.Column('status', postgresql.ENUM('pending', 'accepted', 'driver_arrived', 'in_progress', 'completed', 'cancelled', 'cancelled_by_driver', 'cancelled_by_passenger', name='orderstatus'), nullable=False),
-        sa.Column('price', sa.Float(), nullable=True),
-        sa.Column('estimated_time_minutes', sa.Integer(), nullable=True),
-        sa.Column('driver_location_lat', sa.Float(), nullable=True),
-        sa.Column('driver_location_lng', sa.Float(), nullable=True),
-        sa.Column('vehicle_info', sa.String(), nullable=True),
-        sa.Column('cancellation_reason', sa.Text(), nullable=True),
-        sa.Column('cancelled_by', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('accepted_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('cancelled_at', sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    # Проверяем, существует ли таблица orders
+    op.execute("""
+        DO $$ 
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') THEN
+                -- Создаем таблицу orders только если её нет
+                CREATE TABLE orders (
+                    id SERIAL NOT NULL,
+                    passenger_id INTEGER NOT NULL,
+                    driver_id INTEGER,
+                    start_latitude FLOAT NOT NULL,
+                    start_longitude FLOAT NOT NULL,
+                    start_address VARCHAR NOT NULL,
+                    end_latitude FLOAT,
+                    end_longitude FLOAT,
+                    end_address VARCHAR,
+                    status orderstatus NOT NULL DEFAULT 'pending',
+                    price FLOAT,
+                    estimated_time_minutes INTEGER,
+                    driver_location_lat FLOAT,
+                    driver_location_lng FLOAT,
+                    vehicle_info VARCHAR,
+                    cancellation_reason TEXT,
+                    cancelled_by INTEGER,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ,
+                    accepted_at TIMESTAMPTZ,
+                    completed_at TIMESTAMPTZ,
+                    cancelled_at TIMESTAMPTZ,
+                    PRIMARY KEY (id)
+                );
+                CREATE INDEX ix_orders_id ON orders (id);
+                CREATE INDEX ix_orders_passenger_id ON orders (passenger_id);
+                CREATE INDEX ix_orders_driver_id ON orders (driver_id);
+                CREATE INDEX ix_orders_status ON orders (status);
+            END IF;
+        END $$;
+    """)
     
-    op.create_index('ix_orders_id', 'orders', ['id'], unique=False)
-    op.create_index('ix_orders_passenger_id', 'orders', ['passenger_id'], unique=False)
-    op.create_index('ix_orders_driver_id', 'orders', ['driver_id'], unique=False)
-    op.create_index('ix_orders_status', 'orders', ['status'], unique=False)
-    
-    # Создаем таблицу driver_debts
-    op.create_table(
-        'driver_debts',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('order_id', sa.Integer(), nullable=False),
-        sa.Column('driver_id', sa.Integer(), nullable=False),
-        sa.Column('amount', sa.Float(), nullable=False),
-        sa.Column('paid_amount', sa.Float(), nullable=False, server_default='0'),
-        sa.Column('remaining_amount', sa.Float(), nullable=False),
-        sa.Column('is_paid', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('is_blocked', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
-        sa.Column('due_date', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('paid_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('blocked_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('notes', sa.Text(), nullable=True),
-        sa.ForeignKeyConstraint(['order_id'], ['orders.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
-    
-    op.create_index('ix_driver_debts_id', 'driver_debts', ['id'], unique=False)
-    op.create_index('ix_driver_debts_order_id', 'driver_debts', ['order_id'], unique=False)
-    op.create_index('ix_driver_debts_driver_id', 'driver_debts', ['driver_id'], unique=False)
-    op.create_index('ix_driver_debts_is_paid', 'driver_debts', ['is_paid'], unique=False)
-    op.create_index('ix_driver_debts_is_blocked', 'driver_debts', ['is_blocked'], unique=False)
+    # Проверяем, существует ли таблица driver_debts
+    op.execute("""
+        DO $$ 
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'driver_debts') THEN
+                -- Создаем таблицу driver_debts только если её нет
+                CREATE TABLE driver_debts (
+                    id SERIAL NOT NULL,
+                    order_id INTEGER NOT NULL,
+                    driver_id INTEGER NOT NULL,
+                    amount FLOAT NOT NULL,
+                    paid_amount FLOAT NOT NULL DEFAULT 0,
+                    remaining_amount FLOAT NOT NULL,
+                    is_paid BOOLEAN NOT NULL DEFAULT false,
+                    is_blocked BOOLEAN NOT NULL DEFAULT false,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    due_date TIMESTAMPTZ NOT NULL,
+                    paid_at TIMESTAMPTZ,
+                    blocked_at TIMESTAMPTZ,
+                    notes TEXT,
+                    PRIMARY KEY (id),
+                    FOREIGN KEY (order_id) REFERENCES orders (id)
+                );
+                CREATE INDEX ix_driver_debts_id ON driver_debts (id);
+                CREATE INDEX ix_driver_debts_order_id ON driver_debts (order_id);
+                CREATE INDEX ix_driver_debts_driver_id ON driver_debts (driver_id);
+                CREATE INDEX ix_driver_debts_is_paid ON driver_debts (is_paid);
+                CREATE INDEX ix_driver_debts_is_blocked ON driver_debts (is_blocked);
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:

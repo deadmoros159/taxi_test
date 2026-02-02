@@ -7,8 +7,11 @@ import structlog
 
 from app.core.config import settings
 from app.core.database import engine, Base, check_db_connection
-from app.api.v1.endpoints import orders
+from app.api.v1.endpoints import orders, complaints, ratings
 from sqlalchemy import text
+
+# Импортируем все модели для создания таблиц
+from app.models import order, driver_debt, complaint, rating  # noqa: F401
 
 # Настройка логирования
 structlog.configure(
@@ -109,6 +112,8 @@ app.add_middleware(
 
 # Подключаем роутеры
 app.include_router(orders.router, prefix=f"{settings.API_V1_PREFIX}/orders")
+app.include_router(complaints.router, prefix=f"{settings.API_V1_PREFIX}")
+app.include_router(ratings.router, prefix=f"{settings.API_V1_PREFIX}")
 
 
 # Health check endpoint

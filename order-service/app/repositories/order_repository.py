@@ -13,7 +13,12 @@ class OrderRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_order(self, order_data: OrderCreate, passenger_id: int) -> Order:
+    async def create_order(
+        self, 
+        order_data: OrderCreate, 
+        passenger_id: int,
+        estimated_price: Optional[float] = None
+    ) -> Order:
         """Создать новый заказ"""
         from datetime import datetime, timezone
         
@@ -30,6 +35,7 @@ class OrderRepository:
             end_address=order_data.end_address,
             status=OrderStatus.PENDING,
             order_date=order_date,
+            price=estimated_price,  # Предварительная цена
         )
         
         self.db.add(order)
@@ -166,6 +172,27 @@ class OrderRepository:
             if hasattr(order, key) and key not in ["cancellation_reason", "cancelled_by"]:
                 setattr(order, key, value)
 
+        await self.db.commit()
+        await self.db.refresh(order)
+        return order
+    
+    async def update_driver_location(
+        self,
+        order_id: int,
+        latitude: float,
+        longitude: float,
+        route_history: Optional[str] = None
+    ) -> Optional[Order]:
+        """Обновить местоположение водителя"""
+        order = await self.get_order_by_id(order_id)
+        if not order:
+            return None
+        
+        order.driver_location_lat = latitude
+        order.driver_location_lng = longitude
+        if route_history:
+            order.route_history = route_history
+        
         await self.db.commit()
         await self.db.refresh(order)
         return order

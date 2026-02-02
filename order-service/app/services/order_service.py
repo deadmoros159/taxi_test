@@ -30,7 +30,8 @@ except ImportError:
 from app.repositories.order_repository import OrderRepository
 from app.repositories.driver_debt_repository import DriverDebtRepository
 from app.models.order import Order, OrderStatus
-from app.schemas.order import OrderCreate, OrderAccept
+from app.schemas.order import OrderCreate, OrderAccept, OrderCompleteData
+from app.services.pricing_service import calculate_price, calculate_estimated_price, calculate_distance
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,17 @@ class OrderService:
         self.debt_repo = debt_repo
 
     async def create_order(self, order_data: OrderCreate, passenger_id: int) -> Order:
-        """Создать новый заказ"""
-        order = await self.order_repo.create_order(order_data, passenger_id)
-        logger.info(f"Order {order.id} created by passenger {passenger_id}")
+        """Создать новый заказ с расчетом предварительной цены"""
+        # Рассчитываем предварительную цену
+        estimated_price, estimated_distance = calculate_estimated_price(
+            order_data.start_latitude,
+            order_data.start_longitude,
+            order_data.end_latitude,
+            order_data.end_longitude
+        )
+        
+        order = await self.order_repo.create_order(order_data, passenger_id, estimated_price)
+        logger.info(f"Order {order.id} created by passenger {passenger_id} with estimated price {estimated_price}")
         return order
 
     async def accept_order(
@@ -138,19 +147,77 @@ class OrderService:
 
         return cancelled_order
 
-    async def complete_order(self, order_id: int, driver_id: int) -> Optional[Order]:
-        """Завершить заказ"""
+    async def complete_order(
+        self, 
+        order_id: int, 
+        driver_id: int,
+        complete_data: Optional[OrderCompleteData] = None
+    ) -> Optional[Order]:
+        """Завершить заказ с расчетом финальной цены"""
         order = await self.order_repo.get_order_by_id(order_id)
         if not order or order.driver_id != driver_id:
             return None
 
+        # Рассчитываем финальную цену на основе фактических данных
+        actual_distance = None
+        actual_time = None
+        final_price = order.price  # Используем предварительную цену по умолчанию
+        
+        if complete_data:
+            actual_distance = complete_data.actual_distance_km
+            actual_time = complete_data.actual_time_minutes
+            
+            # Если есть фактические данные, рассчитываем финальную цену
+            if actual_distance is not None:
+                # Если есть фактическое время, используем его, иначе оцениваем
+                if actual_time is None and order.accepted_at:
+                    # Оцениваем время на основе времени между принятием и завершением
+                    from datetime import datetime
+                    time_diff = (datetime.utcnow() - order.accepted_at).total_seconds() / 60
+                    actual_time = int(time_diff)
+                
+                final_price = calculate_price(actual_distance, actual_time)
+        else:
+            # Если фактических данных нет, рассчитываем на основе координат
+            if order.end_latitude and order.end_latitude:
+                actual_distance = calculate_distance(
+                    order.start_latitude,
+                    order.start_longitude,
+                    order.end_latitude,
+                    order.end_longitude
+                )
+                if order.accepted_at:
+                    from datetime import datetime
+                    time_diff = (datetime.utcnow() - order.accepted_at).total_seconds() / 60
+                    actual_time = int(time_diff)
+                    final_price = calculate_price(actual_distance, actual_time)
+
+        # Обновляем заказ с финальной ценой и фактическими данными
+        update_kwargs = {
+            "price": final_price,
+            "actual_distance_km": actual_distance,
+            "actual_time_minutes": actual_time
+        }
+        
+        if complete_data:
+            if complete_data.end_latitude:
+                update_kwargs["end_latitude"] = complete_data.end_latitude
+            if complete_data.end_longitude:
+                update_kwargs["end_longitude"] = complete_data.end_longitude
+            if complete_data.end_address:
+                update_kwargs["end_address"] = complete_data.end_address
+
         completed_order = await self.order_repo.update_order_status(
             order_id=order_id,
-            status=OrderStatus.COMPLETED
+            status=OrderStatus.COMPLETED,
+            **update_kwargs
         )
 
         if completed_order:
-            logger.info(f"Order {order_id} completed by driver {driver_id}")
+            logger.info(
+                f"Order {order_id} completed by driver {driver_id} "
+                f"with final price {final_price} (distance: {actual_distance} km, time: {actual_time} min)"
+            )
 
         return completed_order
 

@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     DRIVER_COMMISSION_PERCENT: float = 20.0  # 20% комиссия с каждого заказа
     DEBT_CHECK_INTERVAL_DAYS: int = 7  # Проверка долга каждую неделю
     
+    # Pricing Settings
+    BASE_FARE: float = 50.0  # Базовая стоимость поездки (руб)
+    PRICE_PER_KM: float = 15.0  # Стоимость за километр (руб/км)
+    PRICE_PER_MINUTE: float = 2.0  # Стоимость за минуту (руб/мин)
+    MINIMUM_FARE: float = 100.0  # Минимальная стоимость поездки (руб)
+    
     # WebSocket Settings
     WS_HEARTBEAT_INTERVAL: int = 30  # Интервал heartbeat в секундах
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict
+from datetime import datetime
 import httpx
 import logging
 
@@ -13,9 +14,10 @@ from app.services.order_service import OrderService
 from app.services.websocket_manager import websocket_manager
 from app.schemas.order import (
     OrderCreate, OrderResponse, OrderCancel, OrderAccept,
-    OrderStatusUpdate, OrderDetailAdminResponse
+    OrderStatusUpdate, OrderDetailAdminResponse, OrderLocationUpdate, OrderCompleteData
 )
-from app.models.order import OrderStatus
+from app.services.pricing_service import calculate_price, calculate_estimated_price, calculate_distance
+from app.models.order import Order, OrderStatus
 
 logger = logging.getLogger(__name__)
 
@@ -273,13 +275,190 @@ async def cancel_order(
     return order
 
 
-@router.post("/{order_id}/complete", response_model=OrderResponse, tags=["Orders"])
-async def complete_order(
+@router.post("/{order_id}/arrived", response_model=OrderResponse, tags=["Orders"])
+async def driver_arrived(
     order_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Завершить заказ (только для водителей, требуется авторизация)"""
+    """Водитель прибыл к точке отправления (только для водителей)"""
+    user = current_user
+    
+    if user.get("role") != "driver":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only drivers can mark arrival"
+        )
+    
+    order_repo = OrderRepository(db)
+    order = await order_repo.get_order_by_id(order_id)
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+    
+    if order.driver_id != user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only mark arrival for your own orders"
+        )
+    
+    if order.status != OrderStatus.ACCEPTED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot mark arrival for order with status {order.status}"
+        )
+    
+    updated_order = await order_repo.update_order_status(
+        order_id=order_id,
+        status=OrderStatus.DRIVER_ARRIVED
+    )
+    
+    if not updated_order:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to update order status"
+        )
+    
+    await websocket_manager.send_order_update(updated_order)
+    
+    return updated_order
+
+
+@router.post("/{order_id}/start", response_model=OrderResponse, tags=["Orders"])
+async def start_trip(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Начать поездку (только для водителей)"""
+    user = current_user
+    
+    if user.get("role") != "driver":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only drivers can start trips"
+        )
+    
+    order_repo = OrderRepository(db)
+    order = await order_repo.get_order_by_id(order_id)
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+    
+    if order.driver_id != user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only start your own orders"
+        )
+    
+    if order.status != OrderStatus.DRIVER_ARRIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot start trip for order with status {order.status}"
+        )
+    
+    updated_order = await order_repo.update_order_status(
+        order_id=order_id,
+        status=OrderStatus.IN_PROGRESS
+    )
+    
+    if not updated_order:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to update order status"
+        )
+    
+    await websocket_manager.send_order_update(updated_order)
+    
+    return updated_order
+
+
+@router.post("/{order_id}/location", response_model=OrderResponse, tags=["Orders"])
+async def update_driver_location(
+    order_id: int,
+    location_data: OrderLocationUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Обновить местоположение водителя (только для водителей во время активного заказа)"""
+    user = current_user
+    
+    if user.get("role") != "driver":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only drivers can update location"
+        )
+    
+    order_repo = OrderRepository(db)
+    order = await order_repo.get_order_by_id(order_id)
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+    
+    if order.driver_id != user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only update location for your own orders"
+        )
+    
+    # Обновляем местоположение только для активных заказов
+    if order.status not in [OrderStatus.ACCEPTED, OrderStatus.DRIVER_ARRIVED, OrderStatus.IN_PROGRESS]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot update location for order with status {order.status}"
+        )
+    
+    # Обновляем историю маршрута (простое JSON-хранилище координат)
+    import json
+    from datetime import datetime as dt
+    route_history = order.route_history or "[]"
+    try:
+        route_points = json.loads(route_history)
+    except:
+        route_points = []
+    
+    route_points.append({
+        "lat": location_data.latitude,
+        "lng": location_data.longitude,
+        "timestamp": dt.utcnow().isoformat()
+    })
+    
+    updated_order = await order_repo.update_driver_location(
+        order_id=order_id,
+        latitude=location_data.latitude,
+        longitude=location_data.longitude,
+        route_history=json.dumps(route_points)
+    )
+    
+    if not updated_order:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to update location"
+        )
+    
+    # Отправляем обновление через WebSocket
+    await websocket_manager.send_order_update(updated_order)
+    
+    return updated_order
+
+
+@router.post("/{order_id}/complete", response_model=OrderResponse, tags=["Orders"])
+async def complete_order(
+    order_id: int,
+    complete_data: Optional[OrderCompleteData] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Завершить заказ с расчетом финальной цены (только для водителей)"""
     user = current_user
     
     if user.get("role") != "driver":
@@ -292,7 +471,7 @@ async def complete_order(
     debt_repo = DriverDebtRepository(db)
     order_service = OrderService(order_repo, debt_repo)
     
-    order = await order_service.complete_order(order_id, user["id"])
+    order = await order_service.complete_order(order_id, user["id"], complete_data)
     
     if not order:
         raise HTTPException(
@@ -303,6 +482,79 @@ async def complete_order(
     await websocket_manager.send_order_update(order)
     
     return order
+
+
+@router.get("/{order_id}/price", tags=["Orders"])
+async def get_order_price(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Получить или пересчитать цену заказа"""
+    order_repo = OrderRepository(db)
+    order = await order_repo.get_order_by_id(order_id)
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+    
+    # Проверяем права доступа
+    user = current_user
+    user_role = user.get("role")
+    user_id = user.get("id")
+    
+    if user_role not in ["admin", "dispatcher"]:
+        if user_role == "driver" and order.driver_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view price for your own orders"
+            )
+        elif user_role == "passenger" and order.passenger_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view price for your own orders"
+            )
+    
+    # Если заказ завершен и есть фактические данные, используем их
+    if order.status == OrderStatus.COMPLETED and order.actual_distance_km:
+        price = calculate_price(
+            order.actual_distance_km,
+            order.actual_time_minutes
+        )
+        return {
+            "order_id": order_id,
+            "price": price,
+            "distance_km": order.actual_distance_km,
+            "time_minutes": order.actual_time_minutes,
+            "is_final": True
+        }
+    
+    # Иначе рассчитываем предварительную цену
+    if order.end_latitude and order.end_longitude:
+        price, distance = calculate_estimated_price(
+            order.start_latitude,
+            order.start_longitude,
+            order.end_latitude,
+            order.end_longitude
+        )
+        return {
+            "order_id": order_id,
+            "price": price,
+            "estimated_distance_km": distance,
+            "estimated_time_minutes": order.estimated_time_minutes,
+            "is_final": False
+        }
+    
+    # Если нет точки назначения, возвращаем минимальную цену
+    from app.core.config import settings
+    return {
+        "order_id": order_id,
+        "price": settings.MINIMUM_FARE,
+        "is_final": False,
+        "note": "End location not specified, using minimum fare"
+    }
 
 
 @router.get("/my-orders", response_model=List[OrderResponse], tags=["Orders"])
@@ -509,6 +761,87 @@ async def update_order_status(
     await websocket_manager.send_order_update(updated_order)
     
     return updated_order
+
+
+@router.get("/history", response_model=List[OrderResponse], tags=["Orders"])
+async def get_order_history(
+    status_filter: Optional[OrderStatus] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    driver_id: Optional[int] = None,
+    passenger_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Получить историю заказов с фильтрацией"""
+    user = current_user
+    user_role = user.get("role")
+    user_id = user["id"]
+    
+    order_repo = OrderRepository(db)
+    
+    # Если не админ/диспетчер, показываем только свои заказы
+    if user_role not in ["admin", "dispatcher"]:
+        if user_role == "driver":
+            driver_id = user_id
+        elif user_role == "passenger":
+            passenger_id = user_id
+    
+    # Парсим даты
+    from datetime import datetime
+    start_dt = None
+    end_dt = None
+    
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        except:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid start_date format. Use ISO format (e.g., 2025-02-02T00:00:00Z)"
+            )
+    
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        except:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid end_date format. Use ISO format (e.g., 2025-02-02T23:59:59Z)"
+            )
+    
+    # Получаем заказы
+    from sqlalchemy import select, and_
+    stmt = select(Order)
+    
+    conditions = []
+    
+    if status_filter:
+        conditions.append(Order.status == status_filter)
+    
+    if driver_id:
+        conditions.append(Order.driver_id == driver_id)
+    
+    if passenger_id:
+        conditions.append(Order.passenger_id == passenger_id)
+    
+    if start_dt:
+        conditions.append(Order.created_at >= start_dt)
+    
+    if end_dt:
+        conditions.append(Order.created_at <= end_dt)
+    
+    if conditions:
+        stmt = stmt.where(and_(*conditions))
+    
+    stmt = stmt.order_by(Order.created_at.desc()).limit(limit).offset(offset)
+    
+    result = await db.execute(stmt)
+    orders = list(result.scalars().all())
+    
+    return orders
 
 
 # WebSocket endpoints

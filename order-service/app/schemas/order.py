@@ -30,6 +30,8 @@ class OrderResponse(BaseModel):
     status: OrderStatus
     price: Optional[float] = None
     estimated_time_minutes: Optional[int] = None
+    actual_distance_km: Optional[float] = None
+    actual_time_minutes: Optional[int] = None
     driver_location_lat: Optional[float] = None
     driver_location_lng: Optional[float] = None
     vehicle_info: Optional[str] = None
@@ -67,6 +69,21 @@ class OrderAccept(BaseModel):
 class OrderStatusUpdate(BaseModel):
     """Схема обновления статуса заказа"""
     status: OrderStatus = Field(..., description="Новый статус заказа")
+
+
+class OrderLocationUpdate(BaseModel):
+    """Схема обновления местоположения водителя"""
+    latitude: float = Field(..., description="Широта")
+    longitude: float = Field(..., description="Долгота")
+
+
+class OrderCompleteData(BaseModel):
+    """Схема данных для завершения заказа"""
+    actual_distance_km: Optional[float] = Field(None, description="Фактическое расстояние в км")
+    actual_time_minutes: Optional[int] = Field(None, description="Фактическое время поездки в минутах")
+    end_latitude: Optional[float] = Field(None, description="Финальная широта")
+    end_longitude: Optional[float] = Field(None, description="Финальная долгота")
+    end_address: Optional[str] = Field(None, description="Финальный адрес")
 
 
 class OrderDetailAdminResponse(BaseModel):

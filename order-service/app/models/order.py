@@ -41,6 +41,11 @@ class Order(Base):
     price = Column(Float, nullable=True)  # Цена заказа (рассчитывается или устанавливается)
     estimated_time_minutes = Column(Integer, nullable=True)  # Оценка времени до клиента в минутах
     
+    # Фактические данные поездки
+    actual_distance_km = Column(Float, nullable=True)  # Фактическое расстояние в км
+    actual_time_minutes = Column(Integer, nullable=True)  # Фактическое время поездки в минутах
+    route_history = Column(Text, nullable=True)  # История маршрута (JSON строка с координатами)
+    
     # Информация о водителе (когда заказ принят)
     driver_location_lat = Column(Float, nullable=True)  # Текущее местоположение водителя
     driver_location_lng = Column(Float, nullable=True)
@@ -63,5 +68,11 @@ class Order(Base):
     
     # Связь с долгами
     debts = relationship("DriverDebt", back_populates="order", cascade="all, delete-orphan")
+    
+    # Связь с жалобами
+    complaints = relationship("Complaint", back_populates="order", cascade="all, delete-orphan")
+    
+    # Связь с оценками
+    ratings = relationship("Rating", back_populates="order", cascade="all, delete-orphan")
 
 

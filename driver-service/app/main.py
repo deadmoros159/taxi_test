@@ -53,12 +53,20 @@ app = FastAPI(
 )
 
 # CORS
+# Если CORS_ORIGINS содержит "*", то allow_credentials должен быть False
+cors_origins = settings.CORS_ORIGINS
+cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
+
+if "*" in cors_origins:
+    cors_allow_credentials = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=cors_allow_credentials,
+    allow_methods=settings.CORS_ALLOW_METHODS,
+    allow_headers=settings.CORS_ALLOW_HEADERS,
+    expose_headers=["X-Correlation-ID"],
 )
 
 

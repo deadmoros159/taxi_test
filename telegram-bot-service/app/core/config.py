@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field, SecretStr
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
@@ -40,6 +40,15 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+
+    # CORS
+    CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:3000", "http://localhost:5173", "https://xhap.ru"],
+        description="Разрешенные origins для CORS"
+    )
+    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_ALLOW_METHODS: List[str] = ["*"]
+    CORS_ALLOW_HEADERS: List[str] = ["*"]
 
     class Config:
         env_file = ".env"

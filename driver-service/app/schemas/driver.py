@@ -15,12 +15,11 @@ class VehicleCreate(BaseModel):
     seats: int = Field(4, ge=2, le=20)
     vehicle_type: str = Field(..., min_length=1, max_length=30)
     vehicle_photo_url: Optional[str] = Field(None, description="(legacy) URL фото автомобиля")
-    vehicle_photo_media_id: Optional[int] = Field(None, description="Media ID фото автомобиля (media-service)")
     vehicle_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=vehicle_photo) из media-service")
 
 
 class DriverRegisterRequest(BaseModel):
-    """Запрос на регистрацию водителя (от диспетчера)"""
+    """Запрос на регистрацию водителя для существующего пользователя (от диспетчера)"""
     user_id: int = Field(..., description="ID пользователя из auth-service")
     license_number: str = Field(..., min_length=1, max_length=50)
     license_expiry: datetime
@@ -28,12 +27,28 @@ class DriverRegisterRequest(BaseModel):
     license_photo_url: Optional[str] = Field(None, description="(legacy) URL фото водительских прав")
     passport_photo_url: Optional[str] = Field(None, description="(legacy) URL фото паспорта")
     driver_photo_url: Optional[str] = Field(None, description="(legacy) URL фото водителя")
-    license_photo_media_id: Optional[int] = Field(None, description="Media ID фото прав (media-service)")
-    passport_photo_media_id: Optional[int] = Field(None, description="Media ID фото паспорта (media-service)")
-    driver_photo_media_id: Optional[int] = Field(None, description="Media ID фото водителя (media-service)")
     license_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=document) фото прав")
     passport_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=document) фото паспорта")
     driver_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=profile_photo) фото водителя")
+    vehicle: VehicleCreate
+
+
+class DriverFullRegisterRequest(BaseModel):
+    """Запрос на полную регистрацию водителя с нуля (создание пользователя + водителя + авто)"""
+    # Данные пользователя
+    full_name: str = Field(..., min_length=1, max_length=100, description="Полное имя")
+    phone_number: str = Field(..., min_length=10, max_length=20, description="Номер телефона")
+    email: Optional[str] = Field(None, max_length=100, description="Email (опционально)")
+    
+    # Данные водителя
+    license_number: str = Field(..., min_length=1, max_length=50, description="Номер водительского удостоверения")
+    license_expiry: datetime = Field(..., description="Срок действия прав")
+    passport_number: str = Field(..., min_length=1, max_length=50, description="Номер паспорта")
+    license_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=document) фото прав")
+    passport_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=document) фото паспорта")
+    driver_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=profile_photo) фото водителя")
+    
+    # Данные автомобиля
     vehicle: VehicleCreate
 
 
@@ -49,7 +64,6 @@ class VehicleResponse(BaseModel):
     seats: int
     vehicle_type: str
     vehicle_photo_url: Optional[str]
-    vehicle_photo_media_id: Optional[int] = None
     vehicle_photo_media_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime]
@@ -68,9 +82,6 @@ class DriverResponse(BaseModel):
     license_photo_url: Optional[str]
     passport_photo_url: Optional[str]
     driver_photo_url: Optional[str]
-    license_photo_media_id: Optional[int] = None
-    passport_photo_media_id: Optional[int] = None
-    driver_photo_media_id: Optional[int] = None
     license_photo_media_id: Optional[int] = None
     passport_photo_media_id: Optional[int] = None
     driver_photo_media_id: Optional[int] = None
@@ -123,5 +134,10 @@ class FleetVehicleItem(BaseModel):
     brand: str
     model: str
     license_plate: str
+
+
+class VehicleRegisterRequest(BaseModel):
+    """Запрос на регистрацию автомобиля для существующего водителя"""
+    vehicle: VehicleCreate
 
 

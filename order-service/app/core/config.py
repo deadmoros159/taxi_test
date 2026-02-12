@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field, PostgresDsn, field_validator
-from typing import Optional
+from typing import Optional, List
 
 class Settings(BaseSettings):
     # Environment
@@ -59,6 +59,15 @@ class Settings(BaseSettings):
     
     # WebSocket Settings
     WS_HEARTBEAT_INTERVAL: int = 30  # Интервал heartbeat в секундах
+
+    # CORS
+    CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:3000", "http://localhost:5173", "https://xhap.ru"],
+        description="Разрешенные origins для CORS"
+    )
+    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_ALLOW_METHODS: List[str] = ["*"]
+    CORS_ALLOW_HEADERS: List[str] = ["*"]
 
     class Config:
         env_file = ".env"

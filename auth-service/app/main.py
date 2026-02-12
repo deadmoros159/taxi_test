@@ -150,13 +150,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware
+# Middleware - CORS
+# Если CORS_ORIGINS содержит "*", то allow_credentials должен быть False
+# Иначе используем список origins с allow_credentials=True
+cors_origins = settings.CORS_ORIGINS
+cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
+
+# Если origins содержит "*", отключаем credentials (браузеры блокируют это сочетание)
+if "*" in cors_origins:
+    cors_allow_credentials = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В production указать конкретные домены
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=cors_allow_credentials,
+    allow_methods=settings.CORS_ALLOW_METHODS,
+    allow_headers=settings.CORS_ALLOW_HEADERS,
+    expose_headers=["X-Correlation-ID", "X-Request-ID"],
 )
 
 

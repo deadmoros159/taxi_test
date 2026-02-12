@@ -17,9 +17,11 @@ if shared_path not in sys.path:
 from app.core.database import get_db
 from app.schemas.driver import (
     DriverRegisterRequest,
+    DriverFullRegisterRequest,
     DriverResponse,
     DriverStatusUpdate,
     VehicleUpdate,
+    VehicleRegisterRequest,
     DriverMediaUpdate,
     VehicleResponse,
 )
@@ -197,7 +199,7 @@ async def fleet_vehicle_detail(
         },
     }
 
-@router.post("/drivers/register", response_model=DriverResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/drivers/register", response_model=DriverResponse, status_code=status.HTTP_201_CREATED, tags=["Driver Registration"])
 async def register_driver(
     request: DriverRegisterRequest,
     http_request: Request,
@@ -205,13 +207,16 @@ async def register_driver(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Регистрация водителя с автомобилем (только для диспетчеров и админов)
+    Регистрация водителя для существующего пользователя (только для диспетчеров и админов)
     
-    Диспетчер регистрирует пользователя как водителя и добавляет его автомобиль.
+    Используется когда пользователь уже зарегистрирован в системе (как пассажир)
+    и хочет стать водителем. Диспетчер дополняет данные (документы/авто) по user_id.
     
-    ВАЖНО: Роль пользователя НЕ изменяется автоматически в auth-service.
-    Это должно быть сделано отдельно через админ-панель или через событие.
-    Это соблюдает принцип независимости микросервисов.
+    Flow:
+    1) Пользователь зарегистрировался как пассажир
+    2) В приложении нажал "Стать водителем" и пришел в офис
+    3) Диспетчер вызывает этот endpoint с user_id и данными водителя/авто
+    4) Автоматически обновляется роль пользователя в auth-service на 'driver'
     """
     driver_repo = DriverRepository(db)
     
@@ -232,7 +237,6 @@ async def register_driver(
         )
     
     # Проверяем, что пользователь существует в auth-service
-    # (но НЕ изменяем его роль - это нарушит независимость сервисов)
     token = current_user.get("token", "")
     user_exists = await auth_client.check_user_exists(request.user_id, token)
     
@@ -261,12 +265,14 @@ async def register_driver(
         driver_photo_media_id=request.driver_photo_media_id,
     )
     
-    # Сразу переводим пользователя в роль driver (dispatcher/admin имеет права через require_driver_management)
+    # Автоматически переводим пользователя в роль driver
     promoted = await auth_client.promote_user_to_driver(request.user_id, token)
     if not promoted:
         logger.warning(
             f"Driver created in driver-service but failed to promote user role in auth-service: user_id={request.user_id}"
         )
+    
+    logger.info(f"Driver registered for existing user {request.user_id} by dispatcher {dispatcher_id}")
     
     return DriverResponse(
         id=driver.id,
@@ -285,6 +291,264 @@ async def register_driver(
         passport_photo_media_id=driver.passport_photo_media_id,
         driver_photo_media_id=driver.driver_photo_media_id,
         vehicle=driver.vehicle
+    )
+
+
+@router.post("/drivers/register-full", response_model=DriverResponse, status_code=status.HTTP_201_CREATED, tags=["Driver Registration"])
+async def register_driver_full(
+    request: DriverFullRegisterRequest,
+    http_request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Полная регистрация водителя с нуля (только для диспетчеров и админов)
+    
+    Используется когда человек приходит в офис и регистрируется с нуля (не знает про приложение).
+    Создается пользователь в auth-service, затем водитель в driver-service, затем автомобиль.
+    
+    Flow:
+    1) Человек приходит в офис без аккаунта
+    2) Диспетчер вводит все данные (ФИО, телефон, документы, авто)
+    3) Создается пользователь в auth-service (верифицированный и активный)
+    4) Создается водитель в driver-service с ролью 'driver'
+    5) Создается автомобиль
+    """
+    driver_repo = DriverRepository(db)
+    token = current_user.get("token", "")
+    
+    # Проверяем уникальность номера водительского удостоверения
+    existing_license = await driver_repo.get_by_license(request.license_number)
+    if existing_license:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="License number already exists"
+        )
+    
+    # Создаем пользователя в auth-service
+    user_data = await auth_client.create_user_direct(
+        full_name=request.full_name,
+        phone_number=request.phone_number,
+        email=request.email,
+        token=token
+    )
+    
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create user in auth-service. User may already exist."
+        )
+    
+    user_id = user_data.get("id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User created but ID not returned from auth-service"
+        )
+    
+    # Проверяем, не зарегистрирован ли уже этот пользователь как водитель
+    existing_driver = await driver_repo.get_by_user_id(user_id)
+    if existing_driver:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already registered as a driver"
+        )
+    
+    # Получаем ID диспетчера
+    dispatcher_id = current_user.get("id") or current_user.get("user_id")
+    
+    # Создаем водителя с автомобилем
+    driver = await driver_repo.create_driver_with_vehicle(
+        user_id=user_id,
+        license_number=request.license_number,
+        license_expiry=request.license_expiry,
+        passport_number=request.passport_number,
+        registered_by=dispatcher_id,
+        vehicle_data=request.vehicle,
+        license_photo_media_id=request.license_photo_media_id,
+        passport_photo_media_id=request.passport_photo_media_id,
+        driver_photo_media_id=request.driver_photo_media_id,
+    )
+    
+    # Автоматически переводим пользователя в роль driver
+    promoted = await auth_client.promote_user_to_driver(user_id, token)
+    if not promoted:
+        logger.warning(
+            f"Driver created in driver-service but failed to promote user role in auth-service: user_id={user_id}"
+        )
+    
+    logger.info(f"Driver registered from scratch: user_id={user_id}, driver_id={driver.id} by dispatcher {dispatcher_id}")
+    
+    return DriverResponse(
+        id=driver.id,
+        user_id=driver.user_id,
+        license_number=driver.license_number,
+        license_expiry=driver.license_expiry,
+        passport_number=driver.passport_number,
+        status=driver.status.value,
+        is_verified=driver.is_verified,
+        registered_by=driver.registered_by,
+        registered_at=driver.registered_at,
+        license_photo_url=driver.license_photo_url,
+        passport_photo_url=driver.passport_photo_url,
+        driver_photo_url=driver.driver_photo_url,
+        license_photo_media_id=driver.license_photo_media_id,
+        passport_photo_media_id=driver.passport_photo_media_id,
+        driver_photo_media_id=driver.driver_photo_media_id,
+        vehicle=driver.vehicle
+    )
+
+
+@router.post("/drivers/{user_id}/promote-to-driver", response_model=DriverResponse, tags=["Driver Management"])
+async def promote_user_to_driver(
+    user_id: int,
+    http_request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Перевести существующего пользователя в водители (только для диспетчеров и админов)
+    
+    Используется когда пользователь уже зарегистрирован как пассажир,
+    но еще не зарегистрирован как водитель в driver-service.
+    Просто обновляет роль в auth-service на 'driver'.
+    
+    ВАЖНО: Для полной регистрации водителя используйте /drivers/register или /drivers/register-full
+    """
+    token = current_user.get("token", "")
+    
+    # Проверяем, что пользователь существует
+    user_exists = await auth_client.check_user_exists(user_id, token)
+    if not user_exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found in auth-service"
+        )
+    
+    # Проверяем, не зарегистрирован ли уже как водитель
+    driver_repo = DriverRepository(db)
+    existing_driver = await driver_repo.get_by_user_id(user_id)
+    if existing_driver:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already registered as a driver in driver-service"
+        )
+    
+    # Переводим пользователя в роль driver
+    promoted = await auth_client.promote_user_to_driver(user_id, token)
+    if not promoted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to promote user to driver role in auth-service"
+        )
+    
+    logger.info(f"User {user_id} promoted to driver role by {current_user.get('id')}")
+    
+    # Возвращаем информацию о пользователе (но не о водителе, т.к. он еще не зарегистрирован)
+    user_info = await auth_client.get_user_info(user_id, token)
+    
+    raise HTTPException(
+        status_code=status.HTTP_200_OK,
+        detail=f"User {user_id} promoted to driver role. Use /drivers/register to complete driver registration."
+    )
+
+
+@router.post("/drivers/{driver_id}/vehicles", response_model=DriverResponse, status_code=status.HTTP_201_CREATED, tags=["Vehicle Management"])
+async def register_vehicle_for_driver(
+    driver_id: int,
+    request: VehicleRegisterRequest,
+    http_request: Request,
+    current_user: dict = Depends(require_dispatcher_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Зарегистрировать автомобиль для существующего водителя (только для диспетчеров и админов)
+    
+    Используется когда водитель уже зарегистрирован, но нужно добавить или обновить автомобиль.
+    Если у водителя уже есть автомобиль, он будет обновлен.
+    """
+    driver_repo = DriverRepository(db)
+    driver = await driver_repo.get_by_id(driver_id)
+    
+    if not driver:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Driver not found"
+        )
+    
+    # Если у водителя уже есть автомобиль, обновляем его
+    if driver.vehicle:
+        vehicle = await driver_repo.update_vehicle(
+            driver_id=driver_id,
+            brand=request.vehicle.brand,
+            model=request.vehicle.model,
+            year=request.vehicle.year,
+            color=request.vehicle.color,
+            license_plate=request.vehicle.license_plate,
+            vin=request.vehicle.vin,
+            seats=request.vehicle.seats,
+            vehicle_type=request.vehicle.vehicle_type,
+            vehicle_photo_url=request.vehicle.vehicle_photo_url,
+            vehicle_photo_media_id=request.vehicle.vehicle_photo_media_id,
+        )
+        logger.info(f"Vehicle updated for driver {driver_id}")
+    else:
+        # Создаем новый автомобиль
+        from app.models.driver import Vehicle
+        vehicle = Vehicle(
+            driver_id=driver_id,
+            brand=request.vehicle.brand,
+            model=request.vehicle.model,
+            year=request.vehicle.year,
+            color=request.vehicle.color,
+            license_plate=request.vehicle.license_plate,
+            vin=request.vehicle.vin,
+            seats=request.vehicle.seats,
+            vehicle_type=request.vehicle.vehicle_type,
+            vehicle_photo_url=request.vehicle.vehicle_photo_url,
+            vehicle_photo_media_id=request.vehicle.vehicle_photo_media_id,
+        )
+        db.add(vehicle)
+        await db.commit()
+        await db.refresh(vehicle)
+        logger.info(f"Vehicle created for driver {driver_id}")
+    
+    await db.refresh(driver)
+    
+    from app.schemas.driver import VehicleResponse
+    vehicle_response = VehicleResponse(
+        id=vehicle.id,
+        brand=vehicle.brand,
+        model=vehicle.model,
+        year=vehicle.year,
+        color=vehicle.color,
+        license_plate=vehicle.license_plate,
+        vin=vehicle.vin,
+        seats=vehicle.seats,
+        vehicle_type=vehicle.vehicle_type,
+        vehicle_photo_url=vehicle.vehicle_photo_url,
+        vehicle_photo_media_id=vehicle.vehicle_photo_media_id,
+        created_at=vehicle.created_at,
+        updated_at=vehicle.updated_at
+    )
+    
+    return DriverResponse(
+        id=driver.id,
+        user_id=driver.user_id,
+        license_number=driver.license_number,
+        license_expiry=driver.license_expiry,
+        passport_number=driver.passport_number,
+        license_photo_url=driver.license_photo_url,
+        passport_photo_url=driver.passport_photo_url,
+        driver_photo_url=driver.driver_photo_url,
+        license_photo_media_id=driver.license_photo_media_id,
+        passport_photo_media_id=driver.passport_photo_media_id,
+        driver_photo_media_id=driver.driver_photo_media_id,
+        status=driver.status.value,
+        is_verified=driver.is_verified,
+        registered_by=driver.registered_by,
+        registered_at=driver.registered_at,
+        vehicle=vehicle_response
     )
 
 

@@ -374,6 +374,69 @@ async def update_user_role(
     )
 
 
+class CreateUserRequest(BaseModel):
+    """Запрос на создание пользователя напрямую (для офисной регистрации)"""
+    full_name: str = Field(..., min_length=1, max_length=100)
+    phone_number: str = Field(..., min_length=10, max_length=20)
+    email: Optional[str] = Field(None, max_length=100)
+
+
+@router.post("/users/create", response_model=UserResponse, tags=["User Management"])
+async def create_user_direct(
+    request_data: CreateUserRequest,
+    current_user: User = Depends(require_driver_management),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Создать пользователя напрямую (для офисной регистрации водителей).
+    
+    Используется когда человек приходит в офис и регистрируется с нуля.
+    Пользователь создается сразу верифицированным и активным.
+    Только для диспетчеров и админов.
+    """
+    user_repo = UserRepository(db)
+    
+    # Проверяем, не существует ли уже пользователь с таким телефоном
+    existing_phone = await user_repo.get_by_phone(request_data.phone_number)
+    if existing_phone:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this phone number already exists"
+        )
+    
+    # Проверяем email, если указан
+    if request_data.email:
+        existing_email = await user_repo.get_by_email(request_data.email)
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User with this email already exists"
+            )
+    
+    # Создаем пользователя (по умолчанию роль passenger, но можно изменить позже)
+    user = await user_repo.create_user(
+        phone_number=request_data.phone_number,
+        email=request_data.email,
+        full_name=request_data.full_name,
+        is_verified=True,  # Верифицирован сразу при офисной регистрации
+        is_active=True,    # Активен сразу
+        role=UserRole.PASSENGER.value  # По умолчанию пассажир, роль изменится при регистрации водителя
+    )
+    
+    logger.info(f"User created directly by {current_user.id}: {user.id} - {request_data.phone_number}")
+    
+    return UserResponse(
+        id=user.id,
+        full_name=user.full_name,
+        phone_number=user.phone_number,
+        email=user.email,
+        role=user.role,
+        is_active=user.is_active,
+        is_verified=user.is_verified,
+        photo_id=user.photo_id
+    )
+
+
 @router.patch("/users/{user_id}/promote-to-driver", response_model=UserResponse, tags=["User Management"])
 async def promote_user_to_driver(
     user_id: int,
@@ -389,6 +452,8 @@ async def promote_user_to_driver(
     3) Диспетчер в driver-service дополняет данные (документы/авто) по user_id
     4) После успешной регистрации в driver-service вызывается этот endpoint,
        чтобы обновить роль в auth-service на 'driver'
+    
+    ВАЖНО: Этот endpoint вызывается из driver-service, не напрямую из клиента.
     """
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(user_id)
@@ -412,6 +477,7 @@ async def promote_user_to_driver(
         role=updated_user.role,
         is_active=updated_user.is_active,
         is_verified=updated_user.is_verified,
+        photo_id=updated_user.photo_id
     )
 
 

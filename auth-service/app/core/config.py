@@ -142,7 +142,7 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: List[str] = Field(
         default=["http://localhost:3000", "http://localhost:5173", "https://xhap.ru"],
-        description="Разрешенные origins для CORS"
+        description="Разрешенные origins для CORS. Можно использовать переменную окружения CORS_ORIGINS для добавления дополнительных origins (через запятую)"
     )
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: List[str] = ["*"]

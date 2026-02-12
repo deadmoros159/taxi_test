@@ -52,8 +52,15 @@ app = FastAPI(
 )
 
 # Middleware - CORS
-cors_origins = settings.CORS_ORIGINS
+cors_origins = list(settings.CORS_ORIGINS) if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
 cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
+
+# Добавляем поддержку всех localhost портов для разработки через regex
+import re
+localhost_regex = [
+    re.compile(r"http://localhost:\d+"),
+    re.compile(r"http://127\.0\.0\.1:\d+"),
+]
 
 if "*" in cors_origins:
     cors_allow_credentials = False
@@ -61,6 +68,7 @@ if "*" in cors_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=localhost_regex,  # Поддержка localhost с любым портом
     allow_credentials=cors_allow_credentials,
     allow_methods=settings.CORS_ALLOW_METHODS,
     allow_headers=settings.CORS_ALLOW_HEADERS,

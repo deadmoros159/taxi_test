@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import structlog
+import re
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -104,7 +105,6 @@ cors_origins = list(settings.CORS_ORIGINS) if isinstance(settings.CORS_ORIGINS, 
 cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
 
 # Добавляем поддержку всех localhost портов для разработки через regex
-import re
 localhost_regex = [
     re.compile(r"http://localhost:\d+"),
     re.compile(r"http://127\.0\.0\.1:\d+"),

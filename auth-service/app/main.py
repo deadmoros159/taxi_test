@@ -8,6 +8,7 @@ import structlog
 import subprocess
 import sys
 import os
+import re
 
 from app.api.v1.endpoints import auth, users
 from app.core.config import settings
@@ -158,7 +159,6 @@ cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
 
 # Добавляем поддержку всех localhost портов для разработки через regex
 # FastAPI CORSMiddleware поддерживает regex паттерны в allow_origin_regex
-import re
 localhost_regex = [
     re.compile(r"http://localhost:\d+"),
     re.compile(r"http://127\.0\.0\.1:\d+"),

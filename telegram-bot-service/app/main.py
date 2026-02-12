@@ -1,6 +1,7 @@
 import logging
 import sys
 import asyncio
+import re
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 # aiogram 3.4.1 не имеет webhook.fastapi, используем aiohttp интеграцию
@@ -122,7 +123,6 @@ def create_fastapi_app() -> FastAPI:
     cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
 
     # Добавляем поддержку всех localhost портов для разработки через regex
-    import re
     localhost_regex = [
         re.compile(r"http://localhost:\d+"),
         re.compile(r"http://127\.0\.0\.1:\d+"),

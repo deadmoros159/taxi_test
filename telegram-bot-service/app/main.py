@@ -123,9 +123,10 @@ def create_fastapi_app() -> FastAPI:
     cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
 
     # Добавляем поддержку всех localhost портов для разработки через regex
+    # allow_origin_regex принимает список строк (регулярных выражений), а не скомпилированные объекты
     localhost_regex = [
-        re.compile(r"http://localhost:\d+"),
-        re.compile(r"http://127\.0\.0\.1:\d+"),
+        r"http://localhost:\d+",
+        r"http://127\.0\.0\.1:\d+",
     ]
 
     if "*" in cors_origins:

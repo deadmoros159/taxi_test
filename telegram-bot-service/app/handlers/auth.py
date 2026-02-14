@@ -96,9 +96,8 @@ async def handle_contact(message: Message):
             photo = photos.photos[0][-1]  # Последний элемент - самое большое фото
             file = await global_bot.get_file(photo.file_id)
             
-            # Скачиваем фото
-            file_data = await global_bot.download_file(file.file_path)
-            photo_bytes = await file_data.read()
+            # Скачиваем фото (download_file возвращает bytes напрямую)
+            photo_bytes = await global_bot.download_file(file.file_path)
             
             # Загружаем в media-service
             media_client = MediaClient()
@@ -151,28 +150,19 @@ async def handle_contact(message: Message):
             
             deep_link = "taxiapp://auth?" + "&".join([f"{k}={v}" for k, v in deep_link_params.items()])
             
-            # Создаем inline кнопку с deep link
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text="📱 Открыть приложение",
-                        url=deep_link
-                    )
-                ]]
-            )
-            
-            # Отправляем подтверждение с кнопкой deep link
+            # Telegram не поддерживает кастомные URL схемы в inline кнопках
+            # Отправляем deep link в тексте сообщения
             response_text = (
                 "✅ Авторизация успешна!\n\n"
                 f"👤 Ваш ID: {user_id}\n"
                 f"📱 Номер: {phone_number}\n\n"
-                "💡 Нажмите кнопку ниже, чтобы открыть приложение:"
+                "💡 Нажмите на ссылку ниже, чтобы открыть приложение:\n\n"
+                f"🔗 {deep_link}"
             )
 
             await message.answer(
                 response_text,
-                parse_mode="HTML",
-                reply_markup=keyboard
+                parse_mode="HTML"
             )
         else:
             await message.answer(

@@ -85,7 +85,9 @@ class TelegramAuthRequest(BaseModel):
     full_name: str = Field(..., description="Полное имя пользователя из Telegram")
     telegram_user_id: int = Field(..., description="ID пользователя в Telegram")
     telegram_username: Optional[str] = Field(None, description="Username в Telegram")
-    photo_url: Optional[str] = Field(None, description="URL фото профиля из Telegram (опционально)")
+    photo_id: Optional[int] = Field(None, description="ID фото профиля в media-service (опционально)")
+    email: Optional[str] = Field(None, description="Email пользователя (если доступен, опционально)")
+    photo_url: Optional[str] = Field(None, description="URL фото профиля из Telegram (опционально, deprecated - используйте photo_id)")
     auth_date: Optional[int] = Field(None, description="Дата авторизации в Telegram (Unix timestamp, опционально)")
     hash: Optional[str] = Field(None, description="Хеш для проверки подписи данных (опционально, для безопасности)")
 

@@ -23,7 +23,9 @@ class AuthClient:
         phone_number: str,
         full_name: str,
         telegram_user_id: int,
-        telegram_username: Optional[str] = None
+        telegram_username: Optional[str] = None,
+        photo_id: Optional[int] = None,
+        email: Optional[str] = None
     ) -> Optional[Dict]:
         """
         Авторизация через Telegram (без SMS кода)
@@ -45,7 +47,9 @@ class AuthClient:
                 "phone_number": phone_number,
                 "full_name": full_name,
                 "telegram_user_id": telegram_user_id,
-                "telegram_username": telegram_username
+                "telegram_username": telegram_username,
+                "photo_id": photo_id,
+                "email": email
             }
 
             logger.debug(f"Sending request to {url} with payload: {payload}")

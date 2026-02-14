@@ -162,7 +162,9 @@ class AuthService:
             phone_number: str,
             full_name: str,
             telegram_user_id: int,
-            telegram_username: Optional[str] = None
+            telegram_username: Optional[str] = None,
+            photo_id: Optional[int] = None,
+            email: Optional[str] = None
     ) -> Optional[Tuple[str, str, int]]:
         """
         Авторизация через Telegram (без SMS кода).
@@ -193,14 +195,16 @@ class AuthService:
                 user = await self.user_repo.create_user(
                     phone_number=phone_number,
                     full_name=full_name,
+                    email=email,
                     is_verified=True,  # Telegram уже подтвердил номер
                     is_active=True,
                     telegram_user_id=telegram_user_id,
-                    telegram_username=telegram_username
+                    telegram_username=telegram_username,
+                    photo_id=photo_id
                 )
-                logger.info(f"New user created via Telegram: {user.id} - {full_name}, telegram_id: {telegram_user_id}")
+                logger.info(f"New user created via Telegram: {user.id} - {full_name}, telegram_id: {telegram_user_id}, photo_id: {photo_id}")
             else:
-                # Пользователь уже существует - обновляем данные (имя, телефон, username)
+                # Пользователь уже существует - обновляем данные (имя, телефон, username, photo_id, email)
                 update_data = {
                     "is_verified": True,
                     "is_active": True,
@@ -214,9 +218,17 @@ class AuthService:
                 # Обновляем телефон если изменился (может быть, если пользователь сменил номер в Telegram)
                 if user.phone_number != phone_number:
                     update_data["phone_number"] = phone_number
+                
+                # Обновляем email если передан и изменился
+                if email and user.email != email:
+                    update_data["email"] = email
+                
+                # Обновляем photo_id если передан и изменился
+                if photo_id is not None and user.photo_id != photo_id:
+                    update_data["photo_id"] = photo_id
 
                 await self.user_repo.update_user(user.id, **update_data)
-                logger.info(f"User updated via Telegram: {user.id}, telegram_id: {telegram_user_id}")
+                logger.info(f"User updated via Telegram: {user.id}, telegram_id: {telegram_user_id}, photo_id: {photo_id}")
 
             # Создаем JWT токены (включая роль)
             tokens = token_service.create_tokens(

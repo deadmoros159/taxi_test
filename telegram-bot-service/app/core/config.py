@@ -19,6 +19,12 @@ class Settings(BaseSettings):
         default="http://auth-service:8000",
         description="URL auth-service для авторизации"
     )
+    
+    # Media Service
+    MEDIA_SERVICE_URL: str = Field(
+        default="http://media-service:8003",
+        description="URL media-service для загрузки файлов"
+    )
 
     # Webhook
     WEBHOOK_HOST: str = Field(

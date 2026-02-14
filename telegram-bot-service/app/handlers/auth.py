@@ -1,8 +1,11 @@
-from aiogram import Router, F
-from aiogram.types import Message, KeyboardButton, ReplyKeyboardMarkup, Contact
+from aiogram import Router, F, Bot
+from aiogram.types import Message, KeyboardButton, ReplyKeyboardMarkup, Contact, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import Command
 import logging
+import urllib.parse
+import httpx
 from app.services.auth_client import AuthClient
+from app.services.media_client import MediaClient
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +84,42 @@ async def handle_contact(message: Message):
 
     await message.answer("⏳ Авторизация...")
 
+    # Получаем фото профиля из Telegram
+    # Используем глобальный объект bot из main.py
+    from app.main import bot as global_bot
+    photo_id = None
+    try:
+        if global_bot:
+            photos = await global_bot.get_user_profile_photos(telegram_user_id, limit=1)
+        if photos.total_count > 0:
+            # Получаем самое большое фото
+            photo = photos.photos[0][-1]  # Последний элемент - самое большое фото
+            file = await global_bot.get_file(photo.file_id)
+            
+            # Скачиваем фото
+            file_data = await global_bot.download_file(file.file_path)
+            photo_bytes = await file_data.read()
+            
+            # Загружаем в media-service
+            media_client = MediaClient()
+            try:
+                upload_result = await media_client.upload_file(
+                    file_data=photo_bytes,
+                    filename=f"profile_{telegram_user_id}.jpg",
+                    mime_type="image/jpeg",
+                    tag="PROFILE_PHOTO"
+                )
+                if upload_result:
+                    photo_id = upload_result.get("media_id")
+                    logger.info(f"Profile photo uploaded: photo_id={photo_id}")
+            except Exception as e:
+                logger.error(f"Error uploading photo to media-service: {e}", exc_info=True)
+            finally:
+                await media_client.close()
+    except Exception as e:
+        logger.warning(f"Could not get profile photo: {e}", exc_info=True)
+        # Продолжаем без фото
+
     # Авторизация через auth-service
     auth_client = AuthClient()
     try:
@@ -88,25 +127,52 @@ async def handle_contact(message: Message):
             phone_number=phone_number,
             full_name=full_name,
             telegram_user_id=telegram_user_id,
-            telegram_username=telegram_username
+            telegram_username=telegram_username,
+            photo_id=photo_id,
+            email=None  # Email недоступен через Bot API
         )
 
         if result:
             user_id = result.get("user_id")
             
-            # Отправляем только подтверждение, токены не отправляем в чат
+            # Формируем deep link для мобильного приложения
+            # Формат: taxiapp://auth?telegram_id=...&phone=...&name=...&photo_id=...&username=...
+            deep_link_params = {
+                "telegram_id": str(telegram_user_id),
+                "phone": urllib.parse.quote(phone_number),
+                "name": urllib.parse.quote(full_name)
+            }
+            
+            if telegram_username:
+                deep_link_params["username"] = urllib.parse.quote(telegram_username)
+            
+            if photo_id:
+                deep_link_params["photo_id"] = str(photo_id)
+            
+            deep_link = "taxiapp://auth?" + "&".join([f"{k}={v}" for k, v in deep_link_params.items()])
+            
+            # Создаем inline кнопку с deep link
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="📱 Открыть приложение",
+                        url=deep_link
+                    )
+                ]]
+            )
+            
+            # Отправляем подтверждение с кнопкой deep link
             response_text = (
                 "✅ Авторизация успешна!\n\n"
                 f"👤 Ваш ID: {user_id}\n"
                 f"📱 Номер: {phone_number}\n\n"
-                "💡 Токены были отправлены клиентскому приложению.\n"
-                "📝 Используйте API endpoint для получения токенов."
+                "💡 Нажмите кнопку ниже, чтобы открыть приложение:"
             )
 
             await message.answer(
                 response_text,
                 parse_mode="HTML",
-                reply_markup=None  # Убираем клавиатуру после авторизации
+                reply_markup=keyboard
             )
         else:
             await message.answer(

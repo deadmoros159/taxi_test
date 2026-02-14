@@ -243,7 +243,9 @@ async def authorize_via_telegram(
         phone_number=telegram_request.phone_number,
         full_name=telegram_request.full_name,
         telegram_user_id=telegram_request.telegram_user_id,
-        telegram_username=telegram_request.telegram_username
+        telegram_username=telegram_request.telegram_username,
+        photo_id=telegram_request.photo_id,
+        email=telegram_request.email
     )
 
     if not result:

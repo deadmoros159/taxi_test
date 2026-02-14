@@ -81,28 +81,46 @@ async def lifespan(app: FastAPI):
     from aiogram.client.default import DefaultBotProperties
     
     # Startup
+    logger.info("=" * 50)
     logger.info("Starting Telegram Bot Service")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
+    logger.info(f"Webhook Host: {settings.WEBHOOK_HOST}")
+    logger.info(f"Webhook Path: {settings.WEBHOOK_PATH}")
     
-    # Инициализация бота и диспетчера
-    bot = Bot(
-        token=settings.TELEGRAM_BOT_TOKEN.get_secret_value(),
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-    dp = Dispatcher()
-    
-    # Регистрация роутеров
-    dp.include_router(auth_router)
-    
-    # Устанавливаем webhook если нужно
-    await on_startup_bot(bot)
+    try:
+        # Инициализация бота и диспетчера
+        logger.info("Initializing bot and dispatcher...")
+        bot = Bot(
+            token=settings.TELEGRAM_BOT_TOKEN.get_secret_value(),
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        )
+        dp = Dispatcher()
+        
+        # Регистрация роутеров
+        logger.info("Registering routers...")
+        dp.include_router(auth_router)
+        
+        # Устанавливаем webhook если нужно
+        logger.info("Setting up webhook...")
+        await on_startup_bot(bot)
+        
+        logger.info("=" * 50)
+        logger.info("Telegram Bot Service started successfully!")
+        logger.info("=" * 50)
+    except Exception as e:
+        logger.error(f"ERROR during startup: {e}", exc_info=True)
+        raise
     
     yield
     
     # Shutdown
     logger.info("Shutting down Telegram Bot Service")
-    await on_shutdown_bot(bot)
-    if bot:
-        await bot.session.close()
+    try:
+        await on_shutdown_bot(bot)
+        if bot:
+            await bot.session.close()
+    except Exception as e:
+        logger.error(f"ERROR during shutdown: {e}", exc_info=True)
 
 
 def create_fastapi_app() -> FastAPI:

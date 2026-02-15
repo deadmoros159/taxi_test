@@ -91,30 +91,30 @@ async def handle_contact(message: Message):
     try:
         if global_bot:
             photos = await global_bot.get_user_profile_photos(telegram_user_id, limit=1)
-        if photos.total_count > 0:
-            # Получаем самое большое фото
-            photo = photos.photos[0][-1]  # Последний элемент - самое большое фото
-            file = await global_bot.get_file(photo.file_id)
-            
-            # Скачиваем фото (download_file возвращает bytes напрямую)
-            photo_bytes = await global_bot.download_file(file.file_path)
-            
-            # Загружаем в media-service
-            media_client = MediaClient()
-            try:
-                upload_result = await media_client.upload_file(
-                    file_data=photo_bytes,
-                    filename=f"profile_{telegram_user_id}.jpg",
-                    mime_type="image/jpeg",
-                    tag="PROFILE_PHOTO"
-                )
-                if upload_result:
-                    photo_id = upload_result.get("media_id")
-                    logger.info(f"Profile photo uploaded: photo_id={photo_id}")
-            except Exception as e:
-                logger.error(f"Error uploading photo to media-service: {e}", exc_info=True)
-            finally:
-                await media_client.close()
+            if photos.total_count > 0:
+                # Получаем самое большое фото
+                photo = photos.photos[0][-1]  # Последний элемент - самое большое фото
+                file = await global_bot.get_file(photo.file_id)
+                
+                # Скачиваем фото (download_file возвращает bytes напрямую)
+                photo_bytes = await global_bot.download_file(file.file_path)
+                
+                # Загружаем в media-service
+                media_client = MediaClient()
+                try:
+                    upload_result = await media_client.upload_file(
+                        file_data=photo_bytes,
+                        filename=f"profile_{telegram_user_id}.jpg",
+                        mime_type="image/jpeg",
+                        tag="PROFILE_PHOTO"
+                    )
+                    if upload_result:
+                        photo_id = upload_result.get("media_id")
+                        logger.info(f"Profile photo uploaded: photo_id={photo_id}")
+                except Exception as e:
+                    logger.error(f"Error uploading photo to media-service: {e}", exc_info=True)
+                finally:
+                    await media_client.close()
     except Exception as e:
         logger.warning(f"Could not get profile photo: {e}", exc_info=True)
         # Продолжаем без фото
@@ -136,28 +136,32 @@ async def handle_contact(message: Message):
             
             # Формируем deep link для мобильного приложения
             # Формат: taxiapp://auth?telegram_id=...&phone=...&name=...&photo_id=...&username=...
+            # Все параметры обязательны для корректной работы deep link
             deep_link_params = {
                 "telegram_id": str(telegram_user_id),
                 "phone": urllib.parse.quote(phone_number),
                 "name": urllib.parse.quote(full_name)
             }
             
+            # Добавляем опциональные параметры
             if telegram_username:
                 deep_link_params["username"] = urllib.parse.quote(telegram_username)
             
             if photo_id:
                 deep_link_params["photo_id"] = str(photo_id)
             
+            # Формируем deep link
             deep_link = "taxiapp://auth?" + "&".join([f"{k}={v}" for k, v in deep_link_params.items()])
             
-            # Telegram не поддерживает кастомные URL схемы в inline кнопках
-            # Отправляем deep link в тексте сообщения
+            # Отправляем сообщение с deep link
+            # Пользователь может нажать на ссылку, и приложение откроется автоматически
             response_text = (
-                "✅ Авторизация успешна!\n\n"
+                "✅ <b>Авторизация успешна!</b>\n\n"
                 f"👤 Ваш ID: {user_id}\n"
                 f"📱 Номер: {phone_number}\n\n"
-                "💡 Нажмите на ссылку ниже, чтобы открыть приложение:\n\n"
-                f"🔗 {deep_link}"
+                "💡 <b>Нажмите на ссылку ниже, чтобы открыть приложение:</b>\n\n"
+                f"🔗 <a href=\"{deep_link}\">{deep_link}</a>\n\n"
+                "<i>Если ссылка не открывает приложение, откройте приложение вручную и войдите по номеру телефона.</i>"
             )
 
             await message.answer(

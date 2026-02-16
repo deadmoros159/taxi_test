@@ -108,20 +108,39 @@ cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
 
 # Добавляем поддержку всех localhost портов для разработки через regex
 # allow_origin_regex принимает строку с регулярным выражением (не список!)
-# Объединяем несколько паттернов через | (или)
-localhost_regex = r"http://(localhost|127\.0\.0\.1):\d+"
+# Используем только в development для избежания проблем
+localhost_regex = None
+if settings.DEBUG or settings.ENVIRONMENT == "development":
+    localhost_regex = r"http://(localhost|127\.0\.0\.1):\d+"
 
 if "*" in cors_origins:
     cors_allow_credentials = False
 
+# Обрабатываем allow_methods и allow_headers - если это список с "*", заменяем на "*"
+cors_allow_methods = settings.CORS_ALLOW_METHODS
+if isinstance(cors_allow_methods, list) and len(cors_allow_methods) == 1 and cors_allow_methods[0] == "*":
+    cors_allow_methods = "*"
+
+cors_allow_headers = settings.CORS_ALLOW_HEADERS
+if isinstance(cors_allow_headers, list) and len(cors_allow_headers) == 1 and cors_allow_headers[0] == "*":
+    cors_allow_headers = "*"
+
+# Создаем параметры для middleware
+cors_kwargs = {
+    "allow_origins": cors_origins,
+    "allow_credentials": cors_allow_credentials,
+    "allow_methods": cors_allow_methods,
+    "allow_headers": cors_allow_headers,
+    "expose_headers": ["X-Correlation-ID"],
+}
+
+# Добавляем allow_origin_regex только если он задан (для development)
+if localhost_regex:
+    cors_kwargs["allow_origin_regex"] = localhost_regex
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_origin_regex=localhost_regex,  # Поддержка localhost с любым портом
-    allow_credentials=cors_allow_credentials,
-    allow_methods=settings.CORS_ALLOW_METHODS,
-    allow_headers=settings.CORS_ALLOW_HEADERS,
-    expose_headers=["X-Correlation-ID"],
+    **cors_kwargs
 )
 
 # Подключаем роутеры

@@ -148,6 +148,12 @@ class EmailService:
             logger.info(event="smtp_no_cert_verify", message="SSL certificate verification disabled for self-signed certificate")
             
             try:
+                # Таймауты для SMTP подключения (в секундах)
+                # connect_timeout - таймаут на установку соединения
+                # timeout - таймаут на операции чтения/записи
+                smtp_timeout = 15  # 15 секунд на подключение
+                smtp_operation_timeout = 10  # 10 секунд на операции
+                
                 # Используем SMTP класс напрямую для лучшего контроля над SSL
                 if use_ssl:
                     # Для порта 465 используем SSL с самого начала
@@ -156,6 +162,7 @@ class EmailService:
                         port=self.smtp_port,
                         use_tls=True,  # SSL/TLS с самого начала
                         tls_context=ssl_context,  # SSL контекст с отключенной проверкой
+                        timeout=smtp_timeout,  # Таймаут на подключение
                     ) as smtp:
                         await smtp.login(self.smtp_username, self.smtp_password)
                         await smtp.send_message(message)
@@ -168,6 +175,7 @@ class EmailService:
                         port=self.smtp_port,
                         use_tls=False,  # Не используем TLS с самого начала
                         start_tls=False,  # НЕ вызывать starttls автоматически
+                        timeout=smtp_timeout,  # Таймаут на подключение
                     ) as smtp:
                         # Явно вызываем starttls с нашим SSL контекстом (с отключенной проверкой)
                         await smtp.starttls(tls_context=ssl_context)

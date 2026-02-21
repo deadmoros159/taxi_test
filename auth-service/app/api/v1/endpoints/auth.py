@@ -262,6 +262,7 @@ async def authorize_via_telegram(
         refresh_token=refresh_token,
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # 1 час
+        user_id=str(user_id) if user_id else None,
     )
 
 

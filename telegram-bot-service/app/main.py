@@ -229,6 +229,8 @@ def create_fastapi_app() -> FastAPI:
     # Подключаем API роутеры
     from app.api.v1.endpoints import auth as auth_endpoints
     from app.api.v1.endpoints import telegram as telegram_endpoints
+    from app.api.v1.endpoints import app_redirect as app_redirect_endpoints
+
     app.include_router(
         auth_endpoints.router,
         prefix="/api/v1/auth/telegram",
@@ -239,6 +241,13 @@ def create_fastapi_app() -> FastAPI:
         telegram_endpoints.router,
         prefix="/api/v1/telegram",
         tags=["telegram"]
+    )
+
+    # Страница-редирект для deep link (https://xhap.ru/app/auth?params...)
+    app.include_router(
+        app_redirect_endpoints.router,
+        prefix="/app",
+        tags=["app-redirect"]
     )
     
     return app

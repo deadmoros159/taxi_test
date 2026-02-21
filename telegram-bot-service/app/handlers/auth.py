@@ -6,6 +6,7 @@ import urllib.parse
 import httpx
 from app.services.auth_client import AuthClient
 from app.services.media_client import MediaClient
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -133,34 +134,30 @@ async def handle_contact(message: Message):
 
         if result:
             user_id = result.get("user_id")
-            
-            # Формируем deep link для мобильного приложения
-            # Формат: taxiapp://auth?telegram_id=...&phone=...&name=...&photo_id=...&username=...
-            # Все параметры обязательны для корректной работы deep link
-            deep_link_params = {
+
+            # Параметры для страницы-редиректа (https://xhap.ru/app/auth?...)
+            redirect_params = {
                 "telegram_id": str(telegram_user_id),
-                "phone": urllib.parse.quote(phone_number),
-                "name": urllib.parse.quote(full_name)
+                "phone": phone_number,
+                "name": full_name
             }
-            
-            # Добавляем опциональные параметры
             if telegram_username:
-                deep_link_params["username"] = urllib.parse.quote(telegram_username)
-            
+                redirect_params["username"] = telegram_username
             if photo_id:
-                deep_link_params["photo_id"] = str(photo_id)
-            
-            # Формируем deep link
-            deep_link = "taxiapp://auth?" + "&".join([f"{k}={v}" for k, v in deep_link_params.items()])
-            
-            # Отправляем сообщение с deep link
-            # Пользователь может нажать на ссылку, и приложение откроется автоматически
+                redirect_params["photo_id"] = str(photo_id)
+
+            # HTTPS-ссылка на страницу-редирект (откроет приложение через taxiapp://auth)
+            base_url = settings.APP_REDIRECT_BASE_URL.rstrip("/")
+            redirect_url = f"{base_url}/app/auth?" + urllib.parse.urlencode(redirect_params)
+
+            # Текст ответа: показываем user_id только если он есть
+            id_line = f"👤 Ваш ID: {user_id}\n" if user_id else ""
             response_text = (
                 "✅ <b>Авторизация успешна!</b>\n\n"
-                f"👤 Ваш ID: {user_id}\n"
+                f"{id_line}"
                 f"📱 Номер: {phone_number}\n\n"
                 "💡 <b>Нажмите на ссылку ниже, чтобы открыть приложение:</b>\n\n"
-                f"🔗 <a href=\"{deep_link}\">{deep_link}</a>\n\n"
+                f"🔗 <a href=\"{redirect_url}\">Открыть приложение</a>\n\n"
                 "<i>Если ссылка не открывает приложение, откройте приложение вручную и войдите по номеру телефона.</i>"
             )
 

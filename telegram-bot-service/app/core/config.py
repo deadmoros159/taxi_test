@@ -40,6 +40,16 @@ class Settings(BaseSettings):
         description="Секретный ключ для webhook (опционально)"
     )
 
+    # App deep link redirect (HTTPS страница-редирект)
+    APP_REDIRECT_BASE_URL: str = Field(
+        default="https://xhap.ru",
+        description="Базовый URL для редиректа (например https://xhap.ru)"
+    )
+    ANDROID_PACKAGE: Optional[str] = Field(
+        default=None,
+        description="ApplicationId Android приложения для Intent URL (например com.example.taxi)"
+    )
+
     # Server
     HOST: str = Field(default="0.0.0.0", description="Хост для FastAPI сервера")
     PORT: int = Field(default=8004, description="Порт для FastAPI сервера")

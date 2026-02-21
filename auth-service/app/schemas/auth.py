@@ -57,6 +57,7 @@ class TokensResponse(BaseModel):
     refresh_token: str = Field(..., description="JWT refresh token (живет 30 дней)")
     token_type: str = Field(default="bearer", description="Тип токена")
     expires_in: int = Field(..., description="Время жизни access токена в секундах (3600)")
+    user_id: Optional[str] = Field(None, description="ID пользователя (для Telegram бота и др.)")
 
 
 # Для обратной совместимости (можно удалить позже)

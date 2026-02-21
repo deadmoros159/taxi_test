@@ -38,15 +38,15 @@ async def cmd_start(message: Message):
     try:
         check = await auth_client.telegram_user_exists(telegram_user_id)
         if check and check.get("exists") is True:
-            # Пользователь уже зарегистрирован — даём ссылку для открытия приложения
+            # Пользователь уже зарегистрирован — кнопка для возврата в приложение
             base_url = settings.APP_REDIRECT_BASE_URL.rstrip("/")
             redirect_url = f"{base_url}/app/auth?telegram_id={telegram_user_id}"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Вернуться в приложение", url=redirect_url)]
+            ])
             await message.answer(
-                "✅ Вы уже зарегистрированы.\n\n"
-                "💡 <b>Нажмите на ссылку ниже, чтобы открыть приложение:</b>\n\n"
-                f"🔗 <a href=\"{redirect_url}\">Открыть приложение</a>\n\n"
-                "<i>Если ссылка не открывает приложение, откройте приложение вручную и войдите по номеру телефона.</i>",
-                reply_markup=None,
+                "✅ Вы уже зарегистрированы.",
+                reply_markup=keyboard,
                 parse_mode="HTML"
             )
             return
@@ -154,19 +154,22 @@ async def handle_contact(message: Message):
             base_url = settings.APP_REDIRECT_BASE_URL.rstrip("/")
             redirect_url = f"{base_url}/app/auth?" + urllib.parse.urlencode(redirect_params)
 
-            # Текст ответа: показываем user_id только если он есть
+            # Кнопка для возврата в приложение
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Вернуться в приложение", url=redirect_url)]
+            ])
+
             id_line = f"👤 Ваш ID: {user_id}\n" if user_id else ""
             response_text = (
                 "✅ <b>Авторизация успешна!</b>\n\n"
                 f"{id_line}"
                 f"📱 Номер: {phone_number}\n\n"
-                "💡 <b>Нажмите на ссылку ниже, чтобы открыть приложение:</b>\n\n"
-                f"🔗 <a href=\"{redirect_url}\">Открыть приложение</a>\n\n"
-                "<i>Если ссылка не открывает приложение, откройте приложение вручную и войдите по номеру телефона.</i>"
+                "Нажмите кнопку ниже, чтобы вернуться в приложение."
             )
 
             await message.answer(
                 response_text,
+                reply_markup=keyboard,
                 parse_mode="HTML"
             )
         else:

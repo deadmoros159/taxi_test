@@ -38,12 +38,16 @@ async def cmd_start(message: Message):
     try:
         check = await auth_client.telegram_user_exists(telegram_user_id)
         if check and check.get("exists") is True:
-            # Пользователь уже зарегистрирован — контакт не просим
+            # Пользователь уже зарегистрирован — даём ссылку для открытия приложения
+            base_url = settings.APP_REDIRECT_BASE_URL.rstrip("/")
+            redirect_url = f"{base_url}/app/auth?telegram_id={telegram_user_id}"
             await message.answer(
                 "✅ Вы уже зарегистрированы.\n\n"
-                "Авторизация доступна без отправки аккаунта.\n"
-                "Используйте клиентское приложение для получения токенов через API.",
-                reply_markup=None
+                "💡 <b>Нажмите на ссылку ниже, чтобы открыть приложение:</b>\n\n"
+                f"🔗 <a href=\"{redirect_url}\">Открыть приложение</a>\n\n"
+                "<i>Если ссылка не открывает приложение, откройте приложение вручную и войдите по номеру телефона.</i>",
+                reply_markup=None,
+                parse_mode="HTML"
             )
             return
     except Exception as e:

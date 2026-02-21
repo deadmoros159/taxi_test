@@ -12,7 +12,7 @@ class MediaClient:
     def __init__(self):
         self.base_url = settings.MEDIA_SERVICE_URL
         self.client = httpx.AsyncClient(
-            timeout=30.0,
+            timeout=90.0,
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
             follow_redirects=True
         )
@@ -38,26 +38,31 @@ class MediaClient:
         Returns:
             Dict с media_id и другими данными или None при ошибке
         """
+        url = f"{self.base_url}/api/v1/media/upload"
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        files = {"file": (filename, file_data, mime_type)}
+        data = {"tag": tag}
+
+        for attempt in range(2):
+            try:
+                response = await self.client.post(
+                    url, files=files, data=data, headers=headers, timeout=90.0
+                )
+                break
+            except (httpx.ReadError, httpx.ConnectError) as e:
+                if attempt == 0:
+                    logger.warning(f"Media upload attempt {attempt + 1} failed: {e}, retrying...")
+                else:
+                    logger.error(f"Error uploading file to media-service: {e}", exc_info=True)
+                    return None
+            
         try:
-            url = f"{self.base_url}/api/v1/media/upload"
-            
-            headers = {}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            
-            files = {
-                "file": (filename, file_data, mime_type)
-            }
-            data = {
-                "tag": tag
-            }
-            
-            response = await self.client.post(url, files=files, data=data, headers=headers)
-            
             if response.status_code == 201:
-                data = response.json()
-                logger.info(f"File uploaded successfully: media_id={data.get('media_id')}")
-                return data
+                result = response.json()
+                logger.info(f"File uploaded successfully: media_id={result.get('media_id')}")
+                return result
             else:
                 error_data = response.json() if response.content else {}
                 logger.error(

@@ -165,6 +165,8 @@ services:
       - DEBUG=false
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - AUTH_SERVICE_URL=http://auth-service:8000
+      - MEDIA_SERVICE_URL=http://media-service:8003
+      - APP_REDIRECT_BASE_URL=https://xhap.ru
       - WEBHOOK_HOST=${WEBHOOK_HOST:-https://xhap.ru/telegram}
       - WEBHOOK_PATH=/webhook
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}

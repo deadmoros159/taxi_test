@@ -12,7 +12,7 @@ from app.core.config import settings
 router = APIRouter()
 
 
-@router.get("/auth", response_class=HTMLResponse)
+@router.api_route("/auth", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def app_auth_redirect(request: Request):
     """
     Страница для открытия мобильного приложения.

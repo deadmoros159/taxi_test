@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "REPLACE_TEAM_ID.com.example.taxiApp",
+        "paths": ["/app/auth", "/app/auth/*"]
+      }
+    ]
+  }
+}

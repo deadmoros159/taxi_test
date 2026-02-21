@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.taxi_app",
+      "sha256_cert_fingerprints": [
+        "20:48:48:AB:58:3F:F2:82:89:7E:E9:A5:BE:40:E5:EB:98:3A:1F:DE:97:96:E8:8E:2C:73:DF:F5:FC:39:52:3E"
+      ]
+    }
+  }
+]

@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appID": "REPLACE_TEAM_ID.com.example.taxiApp",
+        "appID": "V94H4DWGD.com.example.taxiApp",
         "paths": ["/app/auth", "/app/auth/*"]
       }
     ]

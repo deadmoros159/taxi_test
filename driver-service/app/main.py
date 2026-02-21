@@ -54,27 +54,27 @@ app = FastAPI(
 )
 
 # CORS
-# Если CORS_ORIGINS содержит "*", то allow_credentials должен быть False
-cors_origins = list(settings.CORS_ORIGINS) if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
+cors_origins = list(settings.CORS_ORIGINS) if isinstance(settings.CORS_ORIGINS, list) else [str(settings.CORS_ORIGINS)]
 cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
-
-# Добавляем поддержку всех localhost портов для разработки через regex
-# allow_origin_regex принимает строку с регулярным выражением (не список!)
-# Объединяем несколько паттернов через | (или)
-localhost_regex = r"http://(localhost|127\.0\.0\.1):\d+"
+allow_methods = list(settings.CORS_ALLOW_METHODS) if isinstance(settings.CORS_ALLOW_METHODS, (list, tuple)) else ["*"]
+allow_headers = list(settings.CORS_ALLOW_HEADERS) if isinstance(settings.CORS_ALLOW_HEADERS, (list, tuple)) else ["*"]
 
 if "*" in cors_origins:
     cors_allow_credentials = False
 
-app.add_middleware(
-    CORSMiddleware,
+# allow_origin_regex — только str, не list (иначе Starlette даёт TypeError)
+# localhost regex только для development
+cors_kwargs = dict(
     allow_origins=cors_origins,
-    allow_origin_regex=localhost_regex,  # Поддержка localhost с любым портом
     allow_credentials=cors_allow_credentials,
-    allow_methods=settings.CORS_ALLOW_METHODS,
-    allow_headers=settings.CORS_ALLOW_HEADERS,
+    allow_methods=allow_methods,
+    allow_headers=allow_headers,
     expose_headers=["X-Correlation-ID"],
 )
+if settings.ENVIRONMENT == "development":
+    cors_kwargs["allow_origin_regex"] = r"http://(localhost|127\.0\.0\.1):\d+"
+
+app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 
 # Middleware для correlation ID

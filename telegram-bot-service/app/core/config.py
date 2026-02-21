@@ -46,8 +46,12 @@ class Settings(BaseSettings):
         description="Базовый URL для редиректа (например https://xhap.ru)"
     )
     ANDROID_PACKAGE: Optional[str] = Field(
-        default=None,
-        description="ApplicationId Android приложения для Intent URL (например com.example.taxi)"
+        default="com.example.taxi_app",
+        description="ApplicationId Android приложения для Intent URL"
+    )
+    PLAY_STORE_URL: Optional[str] = Field(
+        default="https://play.google.com/store",
+        description="URL для fallback если приложение не установлено (Intent URL)"
     )
 
     # Server

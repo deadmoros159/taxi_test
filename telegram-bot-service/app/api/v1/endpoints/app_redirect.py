@@ -16,34 +16,43 @@ router = APIRouter()
 async def app_auth_redirect(request: Request):
     """
     Страница для открытия мобильного приложения.
-    Принимает: telegram_id, phone, name, username (опц.), photo_id (опц.)
-    - Android: Intent URL с package (работает в WebView Telegram)
-    - iOS: taxiapp://
-    - Кнопка «Открыть в Chrome» — target="_blank" открывает в системном браузере
+    Режимы:
+    1) token + state — новый флоу (кнопка из бота): редирект на taxiapp://auth?token=&state=
+    2) telegram_id, phone... — старый флоу
     """
     params = dict(request.query_params)
-    taxiapp_params = {
-        k: v for k, v in params.items()
-        if k in ("telegram_id", "phone", "name", "username", "photo_id")
-    }
-    qs = urlencode(taxiapp_params)
-    taxiapp_uri = "taxiapp://auth" + ("?" + qs if qs else "")
-
-    # Текущий URL страницы (для кнопки «Открыть в Chrome»)
     base = str(settings.APP_REDIRECT_BASE_URL).rstrip("/")
     current_url = f"{base}/app/auth" + ("?" + urlencode(params) if params else "")
 
-    # Intent URL для Android (scheme=taxiapp, package)
-    # fallback = эта же страница с ?fallback=1 (не Play Store), чтобы избежать цикла авто-редиректа
-    package = settings.ANDROID_PACKAGE or "com.example.taxi_app"
-    fallback_url = current_url + ("&" if "?" in current_url else "?") + "fallback=1"
-    intent_uri = (
-        f"intent://auth" + ("?" + qs if qs else "") +
-        f"#Intent;scheme=taxiapp;package={package};"
-        f"S.browser_fallback_url={fallback_url};end"
-    )
+    # Режим: token + state (кнопка «Вернуться в приложение» из бота)
+    token = params.get("token")
+    state = params.get("state")
+    if token:
+        taxiapp_params = {"token": token}
+        if state:
+            taxiapp_params["state"] = state
+        qs = urlencode(taxiapp_params)
+        taxiapp_uri = "taxiapp://auth?" + qs
+        # Intent для Android
+        package = settings.ANDROID_PACKAGE or "com.example.taxi_app"
+        fallback_url = current_url + ("&" if "?" in current_url else "?") + "fallback=1"
+        intent_uri = (
+            f"intent://auth?{qs}#Intent;scheme=taxiapp;package={package};"
+            f"S.browser_fallback_url={fallback_url};end"
+        )
+    else:
+        # Старый флоу: telegram_id, phone, name...
+        taxiapp_params = {k: v for k, v in params.items() if k in ("telegram_id", "phone", "name", "username", "photo_id")}
+        qs = urlencode(taxiapp_params)
+        taxiapp_uri = "taxiapp://auth" + ("?" + qs if qs else "")
+        package = settings.ANDROID_PACKAGE or "com.example.taxi_app"
+        fallback_url = current_url + ("&" if "?" in current_url else "?") + "fallback=1"
+        intent_uri = (
+            f"intent://auth" + ("?" + qs if qs else "") +
+            f"#Intent;scheme=taxiapp;package={package};"
+            f"S.browser_fallback_url={fallback_url};end"
+        )
 
-    # Передаём в JS для выбора по user agent
     urls_js = json.dumps({"intent": intent_uri, "taxiapp": taxiapp_uri})
 
     html = f"""<!DOCTYPE html>

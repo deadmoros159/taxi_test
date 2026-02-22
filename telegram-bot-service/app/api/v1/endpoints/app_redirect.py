@@ -33,9 +33,10 @@ async def app_auth_redirect(request: Request):
     base = str(settings.APP_REDIRECT_BASE_URL).rstrip("/")
     current_url = f"{base}/app/auth" + ("?" + urlencode(params) if params else "")
 
-    # Intent URL для Android (scheme=taxiapp, package, fallback на Play Store)
+    # Intent URL для Android (scheme=taxiapp, package)
+    # fallback = эта же страница с ?fallback=1 (не Play Store), чтобы избежать цикла авто-редиректа
     package = settings.ANDROID_PACKAGE or "com.example.taxi_app"
-    fallback_url = settings.PLAY_STORE_URL or "https://play.google.com/store"
+    fallback_url = current_url + ("&" if "?" in current_url else "?") + "fallback=1"
     intent_uri = (
         f"intent://auth" + ("?" + qs if qs else "") +
         f"#Intent;scheme=taxiapp;package={package};"
@@ -65,10 +66,10 @@ async def app_auth_redirect(request: Request):
       var urls = {urls_js};
       var isAndroid = /Android/i.test(navigator.userAgent || "");
       document.getElementById("openAppBtn").href = isAndroid ? urls.intent : urls.taxiapp;
-      if (isAndroid) {{
-        try {{ window.location.href = urls.intent; }} catch (e) {{}}
-      }} else {{
-        try {{ window.location.href = urls.taxiapp; }} catch (e) {{}}
+      var isFallback = new URLSearchParams(window.location.search).get("fallback") === "1";
+      if (!isFallback) {{
+        if (isAndroid) {{ try {{ window.location.href = urls.intent; }} catch (e) {{}} }}
+        else {{ try {{ window.location.href = urls.taxiapp; }} catch (e) {{}} }}
       }}
     }})();
   </script>

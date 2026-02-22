@@ -1,16 +1,47 @@
-from aiogram import Router, F, Bot
-from aiogram.types import Message, KeyboardButton, ReplyKeyboardMarkup, Contact, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.filters import Command
 import logging
+import time
 import urllib.parse
-import httpx
+
+from aiogram import Router, F
+from aiogram.types import Message, KeyboardButton, ReplyKeyboardMarkup, Contact, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.filters import CommandStart, CommandObject
+
 from app.services.auth_client import AuthClient
 from app.services.media_client import MediaClient
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+# Кэш state по telegram_user_id (TTL 15 мин). Приложение передаёт state в t.me/bot?start=STATE
+_state_cache: dict[int, tuple[str, float]] = {}
+_STATE_TTL = 15 * 60
+
+
+def _get_state(telegram_user_id: int) -> str | None:
+    now = time.time()
+    if telegram_user_id in _state_cache:
+        state, ts = _state_cache[telegram_user_id]
+        if now - ts < _STATE_TTL:
+            return state
+        del _state_cache[telegram_user_id]
+    return None
+
+
+def _set_state(telegram_user_id: int, state: str) -> None:
+    _state_cache[telegram_user_id] = (state, time.time())
+
+
+def _clear_state(telegram_user_id: int) -> None:
+    _state_cache.pop(telegram_user_id, None)
+
+
+def _build_taxiapp_url(access_token: str, state: str | None = None) -> str:
+    """taxiapp://auth?state=...&token=..."""
+    params = {"token": access_token}
+    if state:
+        params["state"] = state
+    return "taxiapp://auth?" + urllib.parse.urlencode(params)
 
 
 def get_contact_keyboard() -> ReplyKeyboardMarkup:
@@ -27,35 +58,45 @@ def get_contact_keyboard() -> ReplyKeyboardMarkup:
     return keyboard
 
 
-@router.message(Command("start"))
-async def cmd_start(message: Message):
-    """Обработка команды /start"""
+@router.message(CommandStart())
+async def cmd_start(message: Message, command: CommandObject | None = None):
+    """
+    Флоу: приложение открывает t.me/bot?start=STATE → бот возвращает taxiapp://auth?state=STATE&token=...
+    """
     user = message.from_user
     telegram_user_id = user.id
 
-    # Проверяем, есть ли пользователь уже в БД по telegram_user_id
+    # Сохраняем state из payload (t.me/bot?start=STATE)
+    state = (command.args or "").strip() if command and command.args else None
+    if state:
+        _set_state(telegram_user_id, state)
+
     auth_client = AuthClient()
     try:
         check = await auth_client.telegram_user_exists(telegram_user_id)
         if check and check.get("exists") is True:
-            # Пользователь уже зарегистрирован — кнопка для возврата в приложение
-            base_url = settings.APP_REDIRECT_BASE_URL.rstrip("/")
-            redirect_url = f"{base_url}/app/auth?telegram_id={telegram_user_id}"
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Вернуться в приложение", url=redirect_url)]
-            ])
-            await message.answer(
-                "✅ Вы уже зарегистрированы.",
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
+            # Пользователь уже зарегистрирован — получаем токены и кнопка taxiapp://auth?state=&token=
+            result = await auth_client.authorize_via_telegram_id(telegram_user_id)
+            if result and result.get("access_token"):
+                deep_link = _build_taxiapp_url(result["access_token"], state)
+                _clear_state(telegram_user_id)
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ Вернуться в приложение", url=deep_link)]
+                ])
+                await message.answer(
+                    "✅ Вы уже зарегистрированы.\n\nНажмите кнопку, чтобы вернуться в приложение.",
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+            else:
+                await message.answer("❌ Ошибка при получении токенов. Попробуйте позже.")
             return
     except Exception as e:
         logger.error(f"Error in cmd_start check: {e}", exc_info=True)
     finally:
         await auth_client.close()
 
-    # Если пользователя нет — просим отправить аккаунт/контакт
+    # Новый пользователь — просим отправить контакт (state уже сохранён выше)
     await message.answer(
         "👋 Добро пожаловать в Taxi Service!\n\n"
         "Для регистрации необходимо отправить ваш номер телефона.\n"
@@ -137,26 +178,18 @@ async def handle_contact(message: Message):
         )
 
         if result:
+            access_token = result.get("access_token")
             user_id = result.get("user_id")
+            state = _get_state(telegram_user_id)
+            _clear_state(telegram_user_id)
 
-            # Параметры для страницы-редиректа (https://xhap.ru/app/auth?...)
-            redirect_params = {
-                "telegram_id": str(telegram_user_id),
-                "phone": phone_number,
-                "name": full_name
-            }
-            if telegram_username:
-                redirect_params["username"] = telegram_username
-            if photo_id:
-                redirect_params["photo_id"] = str(photo_id)
+            deep_link = _build_taxiapp_url(access_token, state) if access_token else None
+            if not deep_link:
+                await message.answer("❌ Ошибка: токен не получен.")
+                return
 
-            # HTTPS-ссылка на страницу-редирект (откроет приложение через taxiapp://auth)
-            base_url = settings.APP_REDIRECT_BASE_URL.rstrip("/")
-            redirect_url = f"{base_url}/app/auth?" + urllib.parse.urlencode(redirect_params)
-
-            # Кнопка для возврата в приложение
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Вернуться в приложение", url=redirect_url)]
+                [InlineKeyboardButton(text="◀️ Вернуться в приложение", url=deep_link)]
             ])
 
             id_line = f"👤 Ваш ID: {user_id}\n" if user_id else ""

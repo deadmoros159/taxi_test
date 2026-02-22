@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appID": "V94H4DWGD.com.example.taxiApp",
+        "appID": "Z5B2XSCFWU.com.teztaxi.taxiApp",
         "paths": ["/app/auth", "/app/auth/*"]
       }
     ]

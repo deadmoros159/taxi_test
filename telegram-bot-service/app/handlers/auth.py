@@ -36,19 +36,11 @@ def _clear_state(telegram_user_id: int) -> None:
     _state_cache.pop(telegram_user_id, None)
 
 
-def _build_taxiapp_url(access_token: str, state: str | None = None) -> str:
-    """taxiapp://auth?state=...&token=... — для использования внутри приложения."""
-    params = {"token": access_token}
-    if state:
-        params["state"] = state
-    return "taxiapp://auth?" + urllib.parse.urlencode(params)
-
-
-def _build_redirect_url(access_token: str, state: str | None = None) -> str:
-    """https://... — для InlineKeyboardButton (Telegram не поддерживает taxiapp:// в кнопках)."""
+def _build_redirect_url(code: str, state: str | None = None) -> str:
+    """https://... — для InlineKeyboardButton (Telegram не поддерживает taxiapp://)."""
     from app.core.config import settings
     base = str(settings.APP_REDIRECT_BASE_URL).rstrip("/")
-    params = {"token": access_token}
+    params = {"code": code}
     if state:
         params["state"] = state
     return f"{base}/app/auth?" + urllib.parse.urlencode(params)
@@ -85,11 +77,10 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
     try:
         check = await auth_client.telegram_user_exists(telegram_user_id)
         if check and check.get("exists") is True:
-            # Пользователь уже зарегистрирован — получаем токены и кнопка taxiapp://auth?state=&token=
-            result = await auth_client.authorize_via_telegram_id(telegram_user_id)
-            if result and result.get("access_token"):
-                # Telegram не поддерживает taxiapp:// в InlineKeyboardButton — используем https, страница редиректит
-                btn_url = _build_redirect_url(result["access_token"], state)
+            # Пользователь уже зарегистрирован — создаём код, кнопка ведёт на https (редирект на taxiapp://)
+            code = await auth_client.create_telegram_auth_code(telegram_user_id=telegram_user_id)
+            if code:
+                btn_url = _build_redirect_url(code, state)
                 _clear_state(telegram_user_id)
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="◀️ Вернуться в приложение", url=btn_url)]
@@ -100,7 +91,7 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
                     parse_mode="HTML"
                 )
             else:
-                await message.answer("❌ Ошибка при получении токенов. Попробуйте позже.")
+                await message.answer("❌ Ошибка при создании кода. Попробуйте позже.")
             return
     except Exception as e:
         logger.error(f"Error in cmd_start check: {e}", exc_info=True)
@@ -190,15 +181,20 @@ async def handle_contact(message: Message):
 
         if result:
             access_token = result.get("access_token")
+            refresh_token = result.get("refresh_token")
             user_id = result.get("user_id")
             state = _get_state(telegram_user_id)
             _clear_state(telegram_user_id)
 
-            # Telegram не поддерживает taxiapp:// в InlineKeyboardButton — используем https, страница редиректит
-            btn_url = _build_redirect_url(access_token, state) if access_token else None
-            if not btn_url:
-                await message.answer("❌ Ошибка: токен не получен.")
+            code = await auth_client.create_telegram_auth_code(
+                access_token=access_token,
+                refresh_token=refresh_token,
+            )
+            if not code:
+                await message.answer("❌ Ошибка при создании кода. Попробуйте позже.")
                 return
+
+            btn_url = _build_redirect_url(code, state)
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="◀️ Вернуться в приложение", url=btn_url)]

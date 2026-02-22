@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.schemas.auth import (
-    PhoneAuthRequest, 
+    PhoneAuthRequest,
     EmailAuthRequest,
-    VerifyCodeRequest, 
+    VerifyCodeRequest,
     VerifyPhoneCodeRequest,
     VerifyEmailCodeRequest,
     TelegramAuthRequest,
@@ -13,11 +13,15 @@ from app.schemas.auth import (
     AdminRegisterRequest,
     AdminLoginRequest,
     TokensResponse,
-    PhoneAuthForAppRequest
+    PhoneAuthForAppRequest,
+    CreateTelegramAuthCodeRequest,
+    CreateTelegramAuthCodeResponse,
+    AuthorizeByTokenRequest,
 )
 from app.schemas.token import RefreshTokenRequest
 from app.services.auth_service import AuthService
 from app.services.token_service import token_service
+from app.services.telegram_auth_code_service import telegram_auth_code_service
 from app.utils.rate_limiter import rate_limiter
 from app.api.v1.dependencies import get_current_user
 from app.models.role import UserRole
@@ -310,6 +314,61 @@ async def authorize_via_telegram_id(
 
     access_token, refresh_token, user_id = result
 
+    return TokensResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@telegram_router.post("/create-auth-code", response_model=CreateTelegramAuthCodeResponse)
+async def create_telegram_auth_code(
+    request: Request,
+    payload: CreateTelegramAuthCodeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Создать одноразовый код для deep link.
+    Бот вызывает: с telegram_user_id (существующий пользователь) или access_token+refresh_token (после authorize).
+    Приложение обменивает код на токены через /authorize-by-token.
+    """
+    if payload.telegram_user_id is not None:
+        auth_service = AuthService(db)
+        result = await auth_service.authorize_via_telegram_id(payload.telegram_user_id)
+        if not result:
+            raise HTTPException(status_code=401, detail="Telegram user not found")
+        access_token, refresh_token, _ = result
+    elif payload.access_token and payload.refresh_token:
+        access_token = payload.access_token
+        refresh_token = payload.refresh_token
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either telegram_user_id or (access_token, refresh_token)",
+        )
+
+    code = await telegram_auth_code_service.create_code(access_token, refresh_token)
+    return CreateTelegramAuthCodeResponse(code=code)
+
+
+@telegram_router.post("/authorize-by-token", response_model=TokensResponse)
+async def authorize_by_token(
+    request: Request,
+    payload: AuthorizeByTokenRequest,
+):
+    """
+    Обмен одноразового кода на access_token и refresh_token.
+    Вызывается приложением после получения deep link taxiapp://auth?code=...
+    """
+    result = await telegram_auth_code_service.exchange_code(payload.code)
+    if not result:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired code",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token, refresh_token = result
     return TokensResponse(
         access_token=access_token,
         refresh_token=refresh_token,

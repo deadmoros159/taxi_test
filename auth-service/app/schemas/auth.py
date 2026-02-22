@@ -118,6 +118,23 @@ class TelegramIdAuthRequest(BaseModel):
     telegram_user_id: int = Field(..., description="ID пользователя в Telegram")
 
 
+class CreateTelegramAuthCodeRequest(BaseModel):
+    """Создать одноразовый код для deep link (приложение обменивает на токены)."""
+    telegram_user_id: Optional[int] = Field(None, description="ID в Telegram — сгенерировать токены и код")
+    access_token: Optional[str] = Field(None, description="Уже полученный access_token (с refresh_token)")
+    refresh_token: Optional[str] = Field(None, description="Уже полученный refresh_token")
+
+
+class CreateTelegramAuthCodeResponse(BaseModel):
+    """Ответ с одноразовым кодом."""
+    code: str = Field(..., description="Код для URL (5 мин TTL, одноразовый)")
+
+
+class AuthorizeByTokenRequest(BaseModel):
+    """Обмен кода на токены."""
+    code: str = Field(..., description="Код из deep link (taxiapp://auth?code=...)")
+
+
 class PhoneAuthForAppRequest(BaseModel):
     """Авторизация по номеру телефона (для Flutter/мобильных приложений)"""
     phone_number: str = Field(..., description="Номер телефона (должен быть зарегистрирован через Telegram бот)")

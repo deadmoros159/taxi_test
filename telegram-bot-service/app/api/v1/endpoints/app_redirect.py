@@ -24,11 +24,11 @@ async def app_auth_redirect(request: Request):
     base = str(settings.APP_REDIRECT_BASE_URL).rstrip("/")
     current_url = f"{base}/app/auth" + ("?" + urlencode(params) if params else "")
 
-    # Режим: token + state (кнопка «Вернуться в приложение» из бота)
-    token = params.get("token")
+    # Режим: code (одноразовый код) + state — новый флоу
+    code = params.get("code")
     state = params.get("state")
-    if token:
-        taxiapp_params = {"token": token}
+    if code:
+        taxiapp_params = {"code": code}
         if state:
             taxiapp_params["state"] = state
         qs = urlencode(taxiapp_params)

@@ -99,6 +99,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-order:5432/order_db
       - AUTH_SERVICE_URL=http://auth-service:8000
       - DRIVER_SERVICE_URL=http://driver-service:8001
+      # Ценообразование Узбекистан (сом): BASE_FARE, PRICE_PER_KM=3000, MINIMUM_FARE
+      # OSRM для маршрута: OSRM_URL (пусто = отключить), OSRM_TIMEOUT
     depends_on:
       postgres-order:
         condition: service_healthy

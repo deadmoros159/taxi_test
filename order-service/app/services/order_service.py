@@ -48,8 +48,8 @@ class OrderService:
 
     async def create_order(self, order_data: OrderCreate, passenger_id: int) -> Order:
         """Создать новый заказ с расчетом предварительной цены"""
-        # Рассчитываем предварительную цену
-        estimated_price, estimated_distance = calculate_estimated_price(
+        # Рассчитываем предварительную цену (OSRM или haversine)
+        estimated_price, estimated_distance = await calculate_estimated_price(
             order_data.start_latitude,
             order_data.start_longitude,
             order_data.end_latitude,

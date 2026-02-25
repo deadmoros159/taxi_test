@@ -1,14 +1,18 @@
 """
-Сервис расчета цены заказа
+Сервис расчёта цены заказа (Узбекистан, сом).
+Использует OSRM для точного расстояния по дорогам, fallback — haversine с коэффициентом.
 """
 import logging
 from typing import Optional
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def calculate_distance_haversine(
+    lat1: float, lon1: float, lat2: float, lon2: float
+) -> float:
     """
     Рассчитать расстояние между двумя точками в километрах (формула гаверсинуса)
     
@@ -42,6 +46,10 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return distance
 
 
+# Алиас для обратной совместимости
+calculate_distance = calculate_distance_haversine
+
+
 def calculate_price(
     distance_km: float,
     time_minutes: Optional[int] = None,
@@ -56,7 +64,7 @@ def calculate_price(
         estimated_time_minutes: Оценочное время в минутах (если фактического нет)
     
     Returns:
-        Цена заказа в рублях
+        Цена заказа в сомах (UZS)
     """
     # Используем фактическое время, если есть, иначе оценочное
     time = time_minutes if time_minutes is not None else (estimated_time_minutes or 0)
@@ -77,7 +85,7 @@ def calculate_price(
     price = round(price, 2)
     
     logger.info(
-        f"Calculated price: {price} руб (distance: {distance_km:.2f} km, "
+        f"Calculated price: {price} {settings.CURRENCY} (distance: {distance_km:.2f} km, "
         f"time: {time} min, base: {settings.BASE_FARE}, per_km: {settings.PRICE_PER_KM}, "
         f"per_min: {settings.PRICE_PER_MINUTE})"
     )
@@ -85,14 +93,15 @@ def calculate_price(
     return price
 
 
-def calculate_estimated_price(
+async def calculate_estimated_price(
     start_lat: float,
     start_lng: float,
     end_lat: Optional[float] = None,
     end_lng: Optional[float] = None
 ) -> tuple[float, Optional[float]]:
     """
-    Рассчитать предварительную цену заказа на основе координат
+    Рассчитать предварительную цену заказа на основе координат.
+    Пытается получить расстояние по дорогам через OSRM, иначе haversine * коэффициент.
     
     Args:
         start_lat, start_lng: Координаты точки отправления
@@ -102,17 +111,47 @@ def calculate_estimated_price(
         Кортеж (цена, расстояние_в_км)
     """
     if end_lat is None or end_lng is None:
-        # Если точка назначения не указана, возвращаем минимальную стоимость
         return settings.MINIMUM_FARE, None
-    
-    # Рассчитываем расстояние
-    distance = calculate_distance(start_lat, start_lng, end_lat, end_lng)
-    
-    # Оценочное время (примерно 2 минуты на километр в городе)
-    estimated_time = int(distance * 2)
-    
-    # Рассчитываем цену
+
+    distance: float
+    estimated_time: int
+
+    # Пробуем OSRM (реальное расстояние по дорогам)
+    from app.services.routing_service import get_route_info
+
+    route_info = await get_route_info(start_lat, start_lng, end_lat, end_lng)
+    if route_info:
+        distance, estimated_time = route_info
+    else:
+        # Fallback: haversine с коэффициентом (дороги длиннее прямой линии)
+        haversine_km = calculate_distance_haversine(
+            start_lat, start_lng, end_lat, end_lng
+        )
+        distance = haversine_km * settings.HAVERSINE_MULTIPLIER
+        estimated_time = max(1, int(distance * 2))  # ~2 мин/км в городе
+
     price = calculate_price(distance, estimated_time_minutes=estimated_time)
-    
+    return price, distance
+
+
+def calculate_estimated_price_sync(
+    start_lat: float,
+    start_lng: float,
+    end_lat: Optional[float] = None,
+    end_lng: Optional[float] = None
+) -> tuple[float, Optional[float]]:
+    """
+    Синхронная обёртка — использует только haversine (без OSRM).
+    Для вызовов из синхронного кода или когда OSRM не нужен.
+    """
+    if end_lat is None or end_lng is None:
+        return settings.MINIMUM_FARE, None
+
+    haversine_km = calculate_distance_haversine(
+        start_lat, start_lng, end_lat, end_lng
+    )
+    distance = haversine_km * settings.HAVERSINE_MULTIPLIER
+    estimated_time = max(1, int(distance * 2))
+    price = calculate_price(distance, estimated_time_minutes=estimated_time)
     return price, distance
 

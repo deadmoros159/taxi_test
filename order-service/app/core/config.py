@@ -51,11 +51,23 @@ class Settings(BaseSettings):
     DRIVER_COMMISSION_PERCENT: float = 20.0  # 20% комиссия с каждого заказа
     DEBT_CHECK_INTERVAL_DAYS: int = 7  # Проверка долга каждую неделю
     
-    # Pricing Settings
-    BASE_FARE: float = 50.0  # Базовая стоимость поездки (руб)
-    PRICE_PER_KM: float = 15.0  # Стоимость за километр (руб/км)
-    PRICE_PER_MINUTE: float = 2.0  # Стоимость за минуту (руб/мин)
-    MINIMUM_FARE: float = 100.0  # Минимальная стоимость поездки (руб)
+    # Pricing Settings (Узбекистан — комфорт класс, ~3000 сом/км)
+    CURRENCY: str = Field(default="UZS", description="Валюта (UZS = узбекский сом)")
+    BASE_FARE: float = Field(default=5000.0, description="Базовая стоимость поездки (сом)")
+    PRICE_PER_KM: float = Field(default=3000.0, description="Стоимость за километр (сом/км)")
+    PRICE_PER_MINUTE: float = Field(default=100.0, description="Стоимость за минуту (сом/мин)")
+    MINIMUM_FARE: float = Field(default=8000.0, description="Минимальная стоимость (сом)")
+
+    # Routing (OSRM) — для точного расчёта расстояния по дорогам
+    OSRM_URL: Optional[str] = Field(
+        default="https://router.project-osrm.org",
+        description="URL OSRM. Пусто — использовать haversine с коэффициентом"
+    )
+    OSRM_TIMEOUT: int = Field(default=5, description="Таймаут OSRM в секундах")
+    HAVERSINE_MULTIPLIER: float = Field(
+        default=1.25,
+        description="Коэффициент к прямолинейному расстоянию, если OSRM недоступен (город ~1.2–1.3)"
+    )
     
     # WebSocket Settings
     WS_HEARTBEAT_INTERVAL: int = 30  # Интервал heartbeat в секундах

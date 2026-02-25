@@ -484,6 +484,28 @@ async def complete_order(
     return order
 
 
+@router.get("/estimate-price", tags=["Orders"])
+async def estimate_order_price(
+    start_lat: float,
+    start_lng: float,
+    end_lat: float,
+    end_lng: float,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Предварительная оценка цены по координатам (до создания заказа).
+    Использует OSRM для точного расстояния по дорогам.
+    """
+    price, distance = await calculate_estimated_price(
+        start_lat, start_lng, end_lat, end_lng
+    )
+    return {
+        "estimated_price": price,
+        "estimated_distance_km": distance,
+        "currency": settings.CURRENCY,
+    }
+
+
 @router.get("/{order_id}/price", tags=["Orders"])
 async def get_order_price(
     order_id: int,
@@ -531,9 +553,9 @@ async def get_order_price(
             "is_final": True
         }
     
-    # Иначе рассчитываем предварительную цену
+    # Иначе рассчитываем предварительную цену (OSRM или haversine)
     if order.end_latitude and order.end_longitude:
-        price, distance = calculate_estimated_price(
+        price, distance = await calculate_estimated_price(
             order.start_latitude,
             order.start_longitude,
             order.end_latitude,

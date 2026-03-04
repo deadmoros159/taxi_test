@@ -37,7 +37,6 @@ def _clear_state(telegram_user_id: int) -> None:
 
 
 def _build_redirect_url(code: str, state: str | None = None) -> str:
-    """https://... — для InlineKeyboardButton (Telegram не поддерживает taxiapp://)."""
     from app.core.config import settings
     base = str(settings.APP_REDIRECT_BASE_URL).rstrip("/")
     params = {"code": code}
@@ -47,7 +46,6 @@ def _build_redirect_url(code: str, state: str | None = None) -> str:
 
 
 def get_contact_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура с кнопкой отправки контакта"""
     contact_button = KeyboardButton(
         text="📱 Отправить мой аккаунт",
         request_contact=True
@@ -68,7 +66,6 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
     user = message.from_user
     telegram_user_id = user.id
 
-    # Сохраняем state из payload (t.me/bot?start=STATE)
     state = (command.args or "").strip() if command and command.args else None
     if state:
         _set_state(telegram_user_id, state)
@@ -77,7 +74,6 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
     try:
         check = await auth_client.telegram_user_exists(telegram_user_id)
         if check and check.get("exists") is True:
-            # Пользователь уже зарегистрирован — создаём код, кнопка ведёт на https (редирект на taxiapp://)
             code = await auth_client.create_telegram_auth_code(telegram_user_id=telegram_user_id)
             if code:
                 btn_url = _build_redirect_url(code, state)
@@ -98,7 +94,6 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
     finally:
         await auth_client.close()
 
-    # Новый пользователь — просим отправить контакт (state уже сохранён выше)
     await message.answer(
         "👋 Добро пожаловать в Taxi Service!\n\n"
         "Для регистрации необходимо отправить ваш номер телефона.\n"
@@ -109,11 +104,9 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
 
 @router.message(F.contact)
 async def handle_contact(message: Message):
-    """Обработка получения контакта от пользователя"""
     contact: Contact = message.contact
     user = message.from_user
 
-    # Проверяем, что контакт принадлежит отправителю
     if contact.user_id != user.id:
         await message.answer(
             "❌ Пожалуйста, отправьте именно ваш контакт.\n"
@@ -121,7 +114,6 @@ async def handle_contact(message: Message):
         )
         return
 
-    # Форматируем номер телефона (добавляем + если отсутствует)
     phone_number = contact.phone_number
     if not phone_number.startswith("+"):
         phone_number = f"+{phone_number}"
@@ -132,29 +124,23 @@ async def handle_contact(message: Message):
 
     await message.answer("⏳ Авторизация...")
 
-    # Получаем фото профиля из Telegram
-    # Используем глобальный объект bot из main.py
     from app.main import bot as global_bot
     photo_id = None
     try:
         if global_bot:
             photos = await global_bot.get_user_profile_photos(telegram_user_id, limit=1)
             if photos.total_count > 0:
-                # Получаем самое большое фото
-                photo = photos.photos[0][-1]  # Последний элемент - самое большое фото
+                photo = photos.photos[0][-1]
                 file = await global_bot.get_file(photo.file_id)
                 
-                # Скачиваем фото (download_file возвращает bytes напрямую)
                 photo_bytes = await global_bot.download_file(file.file_path)
-                
-                # Загружаем в media-service
                 media_client = MediaClient()
                 try:
                     upload_result = await media_client.upload_file(
                         file_data=photo_bytes,
                         filename=f"profile_{telegram_user_id}.jpg",
                         mime_type="image/jpeg",
-                        tag="PROFILE_PHOTO"
+                        tag="profile_photo"
                     )
                     if upload_result:
                         photo_id = upload_result.get("media_id")
@@ -165,9 +151,7 @@ async def handle_contact(message: Message):
                     await media_client.close()
     except Exception as e:
         logger.warning(f"Could not get profile photo: {e}", exc_info=True)
-        # Продолжаем без фото
 
-    # Авторизация через auth-service
     auth_client = AuthClient()
     try:
         result = await auth_client.authorize_via_telegram(
@@ -176,7 +160,7 @@ async def handle_contact(message: Message):
             telegram_user_id=telegram_user_id,
             telegram_username=telegram_username,
             photo_id=photo_id,
-            email=None  # Email недоступен через Bot API
+            email=None
         )
 
         if result:

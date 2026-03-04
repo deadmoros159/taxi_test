@@ -1,12 +1,8 @@
-"""
-Endpoints для управления пользователями и ролями
-"""
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-from sqlalchemy.sql import func
 import httpx
 import logging
 
@@ -544,8 +540,6 @@ async def deactivate_user(
         photo_id=user.photo_id
     )
 
-
-# ==================== ADMIN PANEL ENDPOINTS ====================
 
 @router.get("/admin/users", response_model=List[UserResponse], tags=["Admin Panel"])
 async def get_all_users_admin(

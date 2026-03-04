@@ -10,8 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class StorageService:
-    """Сервис для работы с MinIO (S3-совместимое хранилище)"""
-
     def __init__(self):
         self.client = Minio(
             settings.MINIO_ENDPOINT,
@@ -20,10 +18,8 @@ class StorageService:
             secure=settings.MINIO_SECURE,
         )
         self.bucket_name = settings.MINIO_BUCKET_NAME
-        # Bucket будет создан при первом использовании или в lifespan
 
     def ensure_bucket_exists(self):
-        """Создать bucket, если его нет (вызывается при старте сервиса)"""
         try:
             if not self.client.bucket_exists(self.bucket_name):
                 self.client.make_bucket(self.bucket_name)
@@ -31,7 +27,6 @@ class StorageService:
             else:
                 logger.info(f"Bucket {self.bucket_name} already exists")
         except S3Error as e:
-            # BucketAlreadyOwnedByYou - это не ошибка, bucket уже существует
             if "BucketAlreadyOwnedByYou" in str(e):
                 logger.info(f"Bucket {self.bucket_name} already exists (owned by you)")
             else:
@@ -39,9 +34,6 @@ class StorageService:
                 raise
 
     def generate_s3_key(self, original_filename: str, user_id: Optional[int] = None) -> str:
-        """Генерировать уникальный ключ для S3"""
-        # Формат: {user_id}/{uuid}.{extension}
-        # Если user_id нет, используем "anonymous"
         file_ext = original_filename.split(".")[-1] if "." in original_filename else ""
         unique_id = str(uuid.uuid4())
         prefix = f"user_{user_id}" if user_id else "anonymous"
@@ -53,7 +45,6 @@ class StorageService:
         s3_key: str,
         mime_type: str,
     ) -> bool:
-        """Загрузить файл в MinIO"""
         try:
             file_stream = BytesIO(file_data)
             file_stream.seek(0)
@@ -72,7 +63,6 @@ class StorageService:
             return False
 
     async def get_file(self, s3_key: str) -> Optional[Tuple[bytes, str]]:
-        """Получить файл из MinIO. Возвращает (file_data, mime_type)"""
         try:
             response = self.client.get_object(self.bucket_name, s3_key)
             file_data = response.read()
@@ -85,7 +75,6 @@ class StorageService:
             return None
 
     async def delete_file(self, s3_key: str) -> bool:
-        """Удалить файл из MinIO"""
         try:
             self.client.remove_object(self.bucket_name, s3_key)
             logger.info(f"File deleted from S3: {s3_key}")
@@ -94,15 +83,5 @@ class StorageService:
             logger.error(f"Error deleting file from S3: {e}")
             return False
 
-    def get_file_url(self, media_id: int, base_url: Optional[str] = None) -> str:
-        """Получить URL для доступа к файлу"""
-        from app.core.config import settings
-        if base_url:
-            return f"{base_url}{settings.API_V1_PREFIX}/media/{media_id}"
-        # В production можно использовать presigned URLs для безопасности
-        return f"{settings.API_V1_PREFIX}/media/{media_id}"
-
-
-# Глобальный экземпляр
 storage_service = StorageService()
 

@@ -13,25 +13,21 @@ class DriverRepository:
         self.db = db
 
     async def get_by_id(self, driver_id: int) -> Optional[Driver]:
-        """Получить водителя по ID"""
         stmt = select(Driver).where(Driver.id == driver_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_user_id(self, user_id: int) -> Optional[Driver]:
-        """Получить водителя по user_id"""
         stmt = select(Driver).where(Driver.user_id == user_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_license(self, license_number: str) -> Optional[Driver]:
-        """Получить водителя по номеру водительского удостоверения"""
         stmt = select(Driver).where(Driver.license_number == license_number)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_all(self) -> List[Driver]:
-        """Получить всех водителей"""
         stmt = select(Driver).order_by(Driver.created_at.desc())
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
@@ -51,8 +47,6 @@ class DriverRepository:
         passport_photo_media_id: Optional[int] = None,
         driver_photo_media_id: Optional[int] = None,
     ) -> Driver:
-        """Создать водителя с автомобилем"""
-        # Создаем водителя
         driver = Driver(
             user_id=user_id,
             license_number=license_number,
@@ -69,9 +63,8 @@ class DriverRepository:
             is_verified=False
         )
         self.db.add(driver)
-        await self.db.flush()  # Получаем ID водителя
-        
-        # Создаем автомобиль
+        await self.db.flush()
+
         vehicle = Vehicle(
             driver_id=driver.id,
             brand=vehicle_data.brand,
@@ -95,7 +88,6 @@ class DriverRepository:
         return driver
 
     async def update_vehicle(self, driver_id: int, **fields) -> Optional[Vehicle]:
-        """Обновить данные автомобиля по driver_id"""
         stmt = select(Vehicle).where(Vehicle.driver_id == driver_id)
         result = await self.db.execute(stmt)
         vehicle = result.scalar_one_or_none()
@@ -105,7 +97,6 @@ class DriverRepository:
         for key, value in fields.items():
             if value is not None and hasattr(vehicle, key):
                 setattr(vehicle, key, value)
-            # Разрешаем явное удаление фото через null
             if value is None and key in ["vehicle_photo_url", "vehicle_photo_media_id"] and hasattr(vehicle, key):
                 setattr(vehicle, key, None)
 
@@ -114,7 +105,6 @@ class DriverRepository:
         return vehicle
 
     async def update_driver_media(self, driver_id: int, **fields) -> Optional[Driver]:
-        """Обновить media_id полей у водителя"""
         driver = await self.get_by_id(driver_id)
         if not driver:
             return None
@@ -126,7 +116,6 @@ class DriverRepository:
         return driver
 
     async def update_status(self, driver_id: int, new_status: DriverStatus) -> Optional[Driver]:
-        """Обновить статус водителя"""
         stmt = (
             update(Driver)
             .where(Driver.id == driver_id)
@@ -136,25 +125,12 @@ class DriverRepository:
         await self.db.commit()
         return await self.get_by_id(driver_id)
 
-    async def verify_driver(self, driver_id: int) -> Optional[Driver]:
-        """Верифицировать водителя (диспетчер проверил документы)"""
-        stmt = (
-            update(Driver)
-            .where(Driver.id == driver_id)
-            .values(is_verified=True, status=DriverStatus.ACTIVE)
-        )
-        await self.db.execute(stmt)
-        await self.db.commit()
-        return await self.get_by_id(driver_id)
-
     async def delete_driver(self, driver_id: int) -> bool:
-        """Удалить водителя (автомобиль удалится каскадно)"""
         try:
             driver = await self.get_by_id(driver_id)
             if not driver:
                 return False
             
-            # Удаляем водителя (vehicle удалится автоматически через cascade)
             stmt = delete(Driver).where(Driver.id == driver_id)
             result = await self.db.execute(stmt)
             await self.db.commit()
@@ -169,19 +145,16 @@ class DriverRepository:
             return False
 
     async def get_all_vehicles(self) -> List[Vehicle]:
-        """Получить все автомобили"""
         stmt = select(Vehicle).order_by(Vehicle.created_at.desc())
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
     async def get_vehicle_by_id(self, vehicle_id: int) -> Optional[Vehicle]:
-        """Получить автомобиль по ID"""
         stmt = select(Vehicle).where(Vehicle.id == vehicle_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def delete_vehicle(self, vehicle_id: int) -> bool:
-        """Удалить автомобиль"""
         try:
             vehicle = await self.get_vehicle_by_id(vehicle_id)
             if not vehicle:

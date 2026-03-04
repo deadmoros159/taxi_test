@@ -1,7 +1,6 @@
 import logging
 import sys
 import asyncio
-import re
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 # aiogram 3.4.1 не имеет webhook.fastapi, используем aiohttp интеграцию
@@ -11,9 +10,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.handlers.auth import router as auth_router
-from pydantic import SecretStr
 
-# Настройка логирования
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper()),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -23,10 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 async def on_startup_bot(bot: Bot) -> None:
-    """Выполняется при старте приложения"""
     webhook_url = f"{settings.WEBHOOK_HOST}{settings.WEBHOOK_PATH}"
-    
-    # Проверяем, является ли URL HTTPS (Telegram требует HTTPS для webhook)
     use_webhook = settings.WEBHOOK_HOST.startswith("https://")
     
     if not use_webhook:
@@ -34,13 +28,11 @@ async def on_startup_bot(bot: Bot) -> None:
             f"⚠️  Webhook URL не HTTPS ({webhook_url}). "
             f"Webhook не будет установлен. Используйте HTTPS URL для production."
         )
-        # Получаем информацию о боте
         bot_info = await bot.get_me()
         logger.info(f"🤖 Бот запущен (без webhook): @{bot_info.username} ({bot_info.first_name})")
         return
     
     try:
-        # Устанавливаем webhook только если URL HTTPS
         secret_token = settings.WEBHOOK_SECRET.get_secret_value() if settings.WEBHOOK_SECRET else None
         await bot.set_webhook(
             url=webhook_url,
@@ -48,8 +40,6 @@ async def on_startup_bot(bot: Bot) -> None:
             drop_pending_updates=True
         )
         logger.info(f"✅ Webhook установлен: {webhook_url}")
-        
-        # Получаем информацию о боте
         bot_info = await bot.get_me()
         logger.info(f"🤖 Бот запущен: @{bot_info.username} ({bot_info.first_name})")
         
@@ -59,8 +49,6 @@ async def on_startup_bot(bot: Bot) -> None:
 
 
 async def on_shutdown_bot(bot: Bot) -> None:
-    """Выполняется при остановке бота"""
-    # Удаляем webhook только если он был установлен (HTTPS)
     if settings.WEBHOOK_HOST.startswith("https://"):
         try:
             await bot.delete_webhook(drop_pending_updates=False)
@@ -69,14 +57,12 @@ async def on_shutdown_bot(bot: Bot) -> None:
             logger.error(f"Ошибка при удалении webhook: {e}", exc_info=True)
 
 
-# Глобальные объекты
 bot: Bot = None
 dp: Dispatcher = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan для управления ботом"""
     global bot, dp
     from aiogram.client.default import DefaultBotProperties
     
@@ -88,7 +74,6 @@ async def lifespan(app: FastAPI):
     logger.info(f"Webhook Path: {settings.WEBHOOK_PATH}")
     
     try:
-        # Инициализация бота и диспетчера
         logger.info("Initializing bot and dispatcher...")
         bot = Bot(
             token=settings.TELEGRAM_BOT_TOKEN.get_secret_value(),
@@ -96,11 +81,9 @@ async def lifespan(app: FastAPI):
         )
         dp = Dispatcher()
         
-        # Регистрация роутеров
         logger.info("Registering routers...")
         dp.include_router(auth_router)
         
-        # Устанавливаем webhook если нужно
         logger.info("Setting up webhook...")
         await on_startup_bot(bot)
         
@@ -124,7 +107,6 @@ async def lifespan(app: FastAPI):
 
 
 def create_fastapi_app() -> FastAPI:
-    """Создание FastAPI приложения с webhook и Swagger"""
     app = FastAPI(
         title="Telegram Bot Service",
         version="1.0.0",
@@ -136,7 +118,6 @@ def create_fastapi_app() -> FastAPI:
         lifespan=lifespan,
     )
     
-    # CORS middleware
     cors_origins = list(settings.CORS_ORIGINS) if isinstance(settings.CORS_ORIGINS, list) else [str(settings.CORS_ORIGINS)]
     cors_allow_credentials = settings.CORS_ALLOW_CREDENTIALS
     allow_methods = list(settings.CORS_ALLOW_METHODS) if isinstance(settings.CORS_ALLOW_METHODS, (list, tuple)) else ["*"]
@@ -157,10 +138,8 @@ def create_fastapi_app() -> FastAPI:
 
     app.add_middleware(CORSMiddleware, **cors_kwargs)
     
-    # Webhook endpoint для обработки запросов от Telegram
     @app.post(settings.WEBHOOK_PATH)
     async def webhook_endpoint(request: Request):
-        """Endpoint для обработки webhook запросов от Telegram"""
         global bot, dp
         
         if not bot or not dp:
@@ -171,7 +150,6 @@ def create_fastapi_app() -> FastAPI:
                 content={"detail": "Bot not initialized"}
             )
         
-        # Проверяем secret token если он установлен
         if settings.WEBHOOK_SECRET:
             secret_token = settings.WEBHOOK_SECRET.get_secret_value()
             received_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
@@ -183,14 +161,10 @@ def create_fastapi_app() -> FastAPI:
                     content={"detail": "Invalid secret token"}
                 )
         
-        # Получаем тело запроса
         body = await request.json()
-        
-        # Обрабатываем через диспетчер aiogram
         try:
             from aiogram.types import Update
             update = Update(**body)
-            # В aiogram 3.4.1 используем feed_update для обработки webhook
             await dp.feed_update(bot, update)
             return {"ok": True}
         except Exception as e:
@@ -202,10 +176,8 @@ def create_fastapi_app() -> FastAPI:
                 content={"detail": "Error processing update"}
             )
     
-    # Health check endpoint
     @app.get("/health")
     async def health_check_endpoint():
-        """Health check для Kubernetes и load balancers"""
         return {
             "status": "healthy",
             "service": "telegram-bot-service",
@@ -213,10 +185,8 @@ def create_fastapi_app() -> FastAPI:
             "webhook_configured": settings.WEBHOOK_HOST is not None and settings.WEBHOOK_HOST.startswith("https://")
         }
     
-    # Root endpoint
     @app.get("/")
     async def root_endpoint():
-        """Root endpoint"""
         return {
             "service": "Telegram Bot Service",
             "version": "1.0.0",
@@ -225,7 +195,6 @@ def create_fastapi_app() -> FastAPI:
             "docs": "/docs"
         }
     
-    # Подключаем API роутеры
     from app.api.v1.endpoints import auth as auth_endpoints
     from app.api.v1.endpoints import telegram as telegram_endpoints
     from app.api.v1.endpoints import app_redirect as app_redirect_endpoints
@@ -242,7 +211,6 @@ def create_fastapi_app() -> FastAPI:
         tags=["telegram"]
     )
 
-    # Страница-редирект для deep link (https://xhap.ru/app/auth?params...)
     app.include_router(
         app_redirect_endpoints.router,
         prefix="/app",
@@ -253,29 +221,22 @@ def create_fastapi_app() -> FastAPI:
 
 
 async def run_polling():
-    """Запуск бота в режиме polling (для локальной разработки)"""
     from aiogram.client.default import DefaultBotProperties
     
-    # Инициализация бота и диспетчера
     bot = Bot(
         token=settings.TELEGRAM_BOT_TOKEN.get_secret_value(),
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()
     
-    # Регистрация роутеров
     dp.include_router(auth_router)
     
     try:
-        # Удаляем webhook если был установлен
         await bot.delete_webhook(drop_pending_updates=True)
-        
-        # Получаем информацию о боте
         bot_info = await bot.get_me()
         logger.info(f"🤖 Бот запущен (polling): @{bot_info.username} ({bot_info.first_name})")
         logger.info("📡 Режим: Polling (для локальной разработки)")
         
-        # Запускаем polling
         await dp.start_polling(bot)
         
     except Exception as e:
@@ -286,7 +247,6 @@ async def run_polling():
 
 
 async def run_webhook_server():
-    """Запуск FastAPI сервера с webhook и Swagger"""
     app = create_fastapi_app()
     
     import uvicorn
@@ -296,7 +256,6 @@ async def run_webhook_server():
     logger.info(f"🔗 Auth Service URL: {settings.AUTH_SERVICE_URL}")
     logger.info(f"📡 Webhook URL: {settings.WEBHOOK_HOST}{settings.WEBHOOK_PATH}")
     
-    # Запускаем FastAPI сервер
     config = uvicorn.Config(
         app,
         host=settings.HOST,
@@ -309,15 +268,11 @@ async def run_webhook_server():
 
 if __name__ == "__main__":
     try:
-        # Проверяем, нужно ли использовать webhook (только для HTTPS)
         use_webhook = settings.WEBHOOK_HOST.startswith("https://")
-        
         if use_webhook:
-            # Запускаем webhook сервер для production
             logger.info("🌐 Режим: Webhook (production)")
             asyncio.run(run_webhook_server())
         else:
-            # Запускаем polling для локальной разработки
             logger.info("🔄 Режим: Polling (локальная разработка)")
             asyncio.run(run_polling())
             

@@ -134,24 +134,3 @@ async def calculate_estimated_price(
     return price, distance
 
 
-def calculate_estimated_price_sync(
-    start_lat: float,
-    start_lng: float,
-    end_lat: Optional[float] = None,
-    end_lng: Optional[float] = None
-) -> tuple[float, Optional[float]]:
-    """
-    Синхронная обёртка — использует только haversine (без OSRM).
-    Для вызовов из синхронного кода или когда OSRM не нужен.
-    """
-    if end_lat is None or end_lng is None:
-        return settings.MINIMUM_FARE, None
-
-    haversine_km = calculate_distance_haversine(
-        start_lat, start_lng, end_lat, end_lng
-    )
-    distance = haversine_km * settings.HAVERSINE_MULTIPLIER
-    estimated_time = max(1, int(distance * 2))
-    price = calculate_price(distance, estimated_time_minutes=estimated_time)
-    return price, distance
-

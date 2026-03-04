@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timedelta
 import logging
 import sys
@@ -179,7 +179,7 @@ class OrderService:
                 final_price = calculate_price(actual_distance, actual_time)
         else:
             # Если фактических данных нет, рассчитываем на основе координат
-            if order.end_latitude and order.end_latitude:
+            if order.end_latitude and order.end_longitude:
                 actual_distance = calculate_distance(
                     order.start_latitude,
                     order.start_longitude,
@@ -220,18 +220,4 @@ class OrderService:
             )
 
         return completed_order
-
-    async def check_and_block_drivers(self) -> List[int]:
-        """Проверить просроченные долги и заблокировать водителей"""
-        overdue_debts = await self.debt_repo.get_overdue_debts()
-        blocked_drivers = set()
-
-        for debt in overdue_debts:
-            if not debt.is_blocked:
-                blocked = await self.debt_repo.block_driver(debt.driver_id)
-                if blocked:
-                    blocked_drivers.add(debt.driver_id)
-                    logger.warning(f"Driver {debt.driver_id} blocked due to overdue debt")
-
-        return list(blocked_drivers)
 

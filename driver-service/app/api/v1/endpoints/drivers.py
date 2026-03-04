@@ -1,6 +1,3 @@
-"""
-Endpoints для управления водителями и их автомобилями
-"""
 import sys
 import os
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -9,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 import logging
 
-# Добавляем shared library в путь
 shared_path = os.path.join(os.path.dirname(__file__), '../../../../shared')
 if shared_path not in sys.path:
     sys.path.insert(0, shared_path)
@@ -39,19 +35,12 @@ async def get_current_user_from_token(
     request: Request,
     authorization: str = Depends(lambda: None)
 ):
-    """
-    Получить текущего пользователя из токена
-    
-    Использует ResilientHTTPClient с Circuit Breaker и Retry Logic
-    """
-    # Устанавливаем correlation ID из заголовка или генерируем новый
     correlation_id = request.headers.get("X-Correlation-ID")
     if correlation_id:
         set_correlation_id(correlation_id)
     else:
         set_correlation_id()
     
-    # Получаем токен из заголовка Authorization
     if not authorization:
         authorization = request.headers.get("Authorization", "")
     
@@ -70,7 +59,6 @@ async def get_current_user_from_token(
             detail="Invalid token"
         )
     
-    # Проверяем роль
     role = user_data.get("role")
     if role not in ["dispatcher", "admin", "driver"]:
         raise HTTPException(
@@ -78,7 +66,6 @@ async def get_current_user_from_token(
             detail="Access denied"
         )
     
-    # Сохраняем токен для дальнейшего использования
     user_data["token"] = token
     
     return user_data
@@ -88,7 +75,6 @@ def require_dispatcher_or_admin(
     request: Request,
     current_user: dict = Depends(get_current_user_from_token)
 ):
-    """Только диспетчеры и админы"""
     role = current_user.get("role")
     if role not in ["dispatcher", "admin"]:
         raise HTTPException(
@@ -102,7 +88,6 @@ def require_driver(
     request: Request,
     current_user: dict = Depends(get_current_user_from_token)
 ):
-    """Только водители"""
     role = current_user.get("role")
     if role not in ["driver", "admin"]:
         raise HTTPException(
@@ -118,7 +103,6 @@ async def fleet_summary(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Автопарк: сколько авто в БД и к каким водителям/пользователям привязаны"""
     from sqlalchemy import select, func
     from app.models.driver import Vehicle, Driver
 
@@ -152,7 +136,6 @@ async def fleet_vehicle_detail(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Автопарк: детальная информация по авто + привязка к водителю/пользователю"""
     from sqlalchemy import select
     from app.models.driver import Vehicle, Driver
 
@@ -206,21 +189,9 @@ async def register_driver(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Регистрация водителя для существующего пользователя (только для диспетчеров и админов)
-    
-    Используется когда пользователь уже зарегистрирован в системе (как пассажир)
-    и хочет стать водителем. Диспетчер дополняет данные (документы/авто) по user_id.
-    
-    Flow:
-    1) Пользователь зарегистрировался как пассажир
-    2) В приложении нажал "Стать водителем" и пришел в офис
-    3) Диспетчер вызывает этот endpoint с user_id и данными водителя/авто
-    4) Автоматически обновляется роль пользователя в auth-service на 'driver'
-    """
+    """Регистрация водителя для существующего пользователя. Диспетчер/админ."""
     driver_repo = DriverRepository(db)
     
-    # Проверяем, не зарегистрирован ли уже этот пользователь как водитель
     existing_driver = await driver_repo.get_by_user_id(request.user_id)
     if existing_driver:
         raise HTTPException(
@@ -228,7 +199,6 @@ async def register_driver(
             detail="User is already registered as a driver"
         )
     
-    # Проверяем уникальность номера водительского удостоверения
     existing_license = await driver_repo.get_by_license(request.license_number)
     if existing_license:
         raise HTTPException(
@@ -236,7 +206,6 @@ async def register_driver(
             detail="License number already exists"
         )
     
-    # Проверяем, что пользователь существует в auth-service
     token = current_user.get("token", "")
     user_exists = await auth_client.check_user_exists(request.user_id, token)
     
@@ -246,10 +215,8 @@ async def register_driver(
             detail="User not found in auth-service"
         )
     
-    # Получаем ID диспетчера
     dispatcher_id = current_user.get("id") or current_user.get("user_id")
     
-    # Создаем водителя с автомобилем
     driver = await driver_repo.create_driver_with_vehicle(
         user_id=request.user_id,
         license_number=request.license_number,
@@ -265,7 +232,6 @@ async def register_driver(
         driver_photo_media_id=request.driver_photo_media_id,
     )
     
-    # Автоматически переводим пользователя в роль driver
     promoted = await auth_client.promote_user_to_driver(request.user_id, token)
     if not promoted:
         logger.warning(
@@ -301,23 +267,10 @@ async def register_driver_full(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Полная регистрация водителя с нуля (только для диспетчеров и админов)
-    
-    Используется когда человек приходит в офис и регистрируется с нуля (не знает про приложение).
-    Создается пользователь в auth-service, затем водитель в driver-service, затем автомобиль.
-    
-    Flow:
-    1) Человек приходит в офис без аккаунта
-    2) Диспетчер вводит все данные (ФИО, телефон, документы, авто)
-    3) Создается пользователь в auth-service (верифицированный и активный)
-    4) Создается водитель в driver-service с ролью 'driver'
-    5) Создается автомобиль
-    """
+    """Полная регистрация с нуля: создаёт user в auth, затем driver+vehicle."""
     driver_repo = DriverRepository(db)
     token = current_user.get("token", "")
     
-    # Проверяем уникальность номера водительского удостоверения
     existing_license = await driver_repo.get_by_license(request.license_number)
     if existing_license:
         raise HTTPException(
@@ -325,7 +278,6 @@ async def register_driver_full(
             detail="License number already exists"
         )
     
-    # Создаем пользователя в auth-service
     user_data = await auth_client.create_user_direct(
         full_name=request.full_name,
         phone_number=request.phone_number,
@@ -346,7 +298,6 @@ async def register_driver_full(
             detail="User created but ID not returned from auth-service"
         )
     
-    # Проверяем, не зарегистрирован ли уже этот пользователь как водитель
     existing_driver = await driver_repo.get_by_user_id(user_id)
     if existing_driver:
         raise HTTPException(
@@ -354,10 +305,8 @@ async def register_driver_full(
             detail="User is already registered as a driver"
         )
     
-    # Получаем ID диспетчера
     dispatcher_id = current_user.get("id") or current_user.get("user_id")
     
-    # Создаем водителя с автомобилем
     driver = await driver_repo.create_driver_with_vehicle(
         user_id=user_id,
         license_number=request.license_number,
@@ -370,7 +319,6 @@ async def register_driver_full(
         driver_photo_media_id=request.driver_photo_media_id,
     )
     
-    # Автоматически переводим пользователя в роль driver
     promoted = await auth_client.promote_user_to_driver(user_id, token)
     if not promoted:
         logger.warning(
@@ -399,25 +347,16 @@ async def register_driver_full(
     )
 
 
-@router.post("/drivers/{user_id}/promote-to-driver", response_model=DriverResponse, tags=["Driver Management"])
+@router.post("/drivers/{user_id}/promote-to-driver", tags=["Driver Management"])
 async def promote_user_to_driver(
     user_id: int,
     http_request: Request,
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Перевести существующего пользователя в водители (только для диспетчеров и админов)
-    
-    Используется когда пользователь уже зарегистрирован как пассажир,
-    но еще не зарегистрирован как водитель в driver-service.
-    Просто обновляет роль в auth-service на 'driver'.
-    
-    ВАЖНО: Для полной регистрации водителя используйте /drivers/register или /drivers/register-full
-    """
+    """Только смена роли в auth на driver. Полная регистрация — /drivers/register."""
     token = current_user.get("token", "")
     
-    # Проверяем, что пользователь существует
     user_exists = await auth_client.check_user_exists(user_id, token)
     if not user_exists:
         raise HTTPException(
@@ -425,7 +364,6 @@ async def promote_user_to_driver(
             detail="User not found in auth-service"
         )
     
-    # Проверяем, не зарегистрирован ли уже как водитель
     driver_repo = DriverRepository(db)
     existing_driver = await driver_repo.get_by_user_id(user_id)
     if existing_driver:
@@ -434,7 +372,6 @@ async def promote_user_to_driver(
             detail="User is already registered as a driver in driver-service"
         )
     
-    # Переводим пользователя в роль driver
     promoted = await auth_client.promote_user_to_driver(user_id, token)
     if not promoted:
         raise HTTPException(
@@ -443,10 +380,6 @@ async def promote_user_to_driver(
         )
     
     logger.info(f"User {user_id} promoted to driver role by {current_user.get('id')}")
-    
-    # Возвращаем информацию о пользователе (но не о водителе, т.к. он еще не зарегистрирован)
-    user_info = await auth_client.get_user_info(user_id, token)
-    
     raise HTTPException(
         status_code=status.HTTP_200_OK,
         detail=f"User {user_id} promoted to driver role. Use /drivers/register to complete driver registration."
@@ -461,12 +394,6 @@ async def register_vehicle_for_driver(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Зарегистрировать автомобиль для существующего водителя (только для диспетчеров и админов)
-    
-    Используется когда водитель уже зарегистрирован, но нужно добавить или обновить автомобиль.
-    Если у водителя уже есть автомобиль, он будет обновлен.
-    """
     driver_repo = DriverRepository(db)
     driver = await driver_repo.get_by_id(driver_id)
     
@@ -476,7 +403,6 @@ async def register_vehicle_for_driver(
             detail="Driver not found"
         )
     
-    # Если у водителя уже есть автомобиль, обновляем его
     if driver.vehicle:
         vehicle = await driver_repo.update_vehicle(
             driver_id=driver_id,
@@ -493,7 +419,6 @@ async def register_vehicle_for_driver(
         )
         logger.info(f"Vehicle updated for driver {driver_id}")
     else:
-        # Создаем новый автомобиль
         from app.models.driver import Vehicle
         vehicle = Vehicle(
             driver_id=driver_id,
@@ -558,7 +483,6 @@ async def get_all_drivers(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить список всех водителей (для диспетчеров и админов)"""
     driver_repo = DriverRepository(db)
     drivers = await driver_repo.get_all()
     
@@ -612,7 +536,6 @@ async def get_my_driver_info(
     current_user: dict = Depends(require_driver),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить информацию о себе (для водителей)"""
     driver_repo = DriverRepository(db)
     user_id = current_user.get("id") or current_user.get("user_id")
     driver = await driver_repo.get_by_user_id(user_id)
@@ -651,7 +574,6 @@ async def update_driver_status(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Изменить статус водителя (для диспетчеров и админов)"""
     driver_repo = DriverRepository(db)
     driver = await driver_repo.get_by_id(driver_id)
     
@@ -711,7 +633,6 @@ async def update_vehicle(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Обновить данные автомобиля водителя (включая фото через media_id)"""
     driver_repo = DriverRepository(db)
     driver = await driver_repo.get_by_id(driver_id)
     if not driver:
@@ -762,7 +683,6 @@ async def update_driver_media(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Обновить медиа (ID) документов/фото водителя"""
     driver_repo = DriverRepository(db)
     updated_driver = await driver_repo.update_driver_media(
         driver_id,
@@ -793,8 +713,6 @@ async def update_driver_media(
     )
 
 
-# ==================== ADMIN PANEL ENDPOINTS ====================
-
 @router.get("/admin/drivers/{driver_id}", response_model=DriverResponse, tags=["Admin Panel"])
 async def get_driver_by_id_admin(
     driver_id: int,
@@ -802,7 +720,6 @@ async def get_driver_by_id_admin(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить информацию о водителе по ID (для админ-панели)"""
     driver_repo = DriverRepository(db)
     driver = await driver_repo.get_by_id(driver_id)
     
@@ -859,7 +776,6 @@ async def delete_driver_admin(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Удалить водителя (для админ-панели)"""
     driver_repo = DriverRepository(db)
     driver = await driver_repo.get_by_id(driver_id)
     
@@ -885,7 +801,6 @@ async def get_all_vehicles_admin(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить список всех автомобилей (для админ-панели)"""
     driver_repo = DriverRepository(db)
     vehicles = await driver_repo.get_all_vehicles()
     
@@ -916,7 +831,6 @@ async def get_vehicle_by_id_admin(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить информацию об автомобиле по ID (для админ-панели)"""
     driver_repo = DriverRepository(db)
     vehicle = await driver_repo.get_vehicle_by_id(vehicle_id)
     
@@ -950,7 +864,6 @@ async def delete_vehicle_admin(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Удалить автомобиль (для админ-панели)"""
     driver_repo = DriverRepository(db)
     vehicle = await driver_repo.get_vehicle_by_id(vehicle_id)
     

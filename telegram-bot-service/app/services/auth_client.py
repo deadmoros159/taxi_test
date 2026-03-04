@@ -7,11 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 class AuthClient:
-    """Клиент для работы с auth-service API"""
-
     def __init__(self):
         self.base_url = settings.AUTH_SERVICE_URL
-        # Настройки клиента для лучшей работы в Docker сети
         self.client = httpx.AsyncClient(
             timeout=30.0,
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
@@ -27,18 +24,6 @@ class AuthClient:
         photo_id: Optional[int] = None,
         email: Optional[str] = None
     ) -> Optional[Dict]:
-        """
-        Авторизация через Telegram (без SMS кода)
-
-        Args:
-            phone_number: Номер телефона из Telegram
-            full_name: Имя пользователя из Telegram
-            telegram_user_id: ID пользователя в Telegram
-            telegram_username: Username в Telegram (опционально)
-
-        Returns:
-            Dict с токенами и данными пользователя или None при ошибке
-        """
         try:
             url = f"{self.base_url}/api/v1/auth/telegram/authorize"
             logger.info(f"Attempting to authorize via Telegram, URL: {url}, base_url: {self.base_url}")
@@ -72,7 +57,6 @@ class AuthClient:
             return None
 
     async def telegram_user_exists(self, telegram_user_id: int) -> Optional[Dict]:
-        """Проверить наличие пользователя по telegram_user_id"""
         try:
             url = f"{self.base_url}/api/v1/auth/telegram/check/{telegram_user_id}"
             response = await self.client.get(url)
@@ -84,7 +68,6 @@ class AuthClient:
             return None
 
     async def authorize_via_telegram_id(self, telegram_user_id: int) -> Optional[Dict]:
-        """Авторизация по telegram_user_id (без контакта)"""
         try:
             url = f"{self.base_url}/api/v1/auth/telegram/authorize-by-id"
             payload = {"telegram_user_id": telegram_user_id}
@@ -104,11 +87,6 @@ class AuthClient:
         access_token: Optional[str] = None,
         refresh_token: Optional[str] = None,
     ) -> Optional[str]:
-        """
-        Создать одноразовый код для deep link.
-        Либо telegram_user_id, либо access_token+refresh_token.
-        Returns код или None.
-        """
         try:
             url = f"{self.base_url}/api/v1/auth/telegram/create-auth-code"
             if telegram_user_id is not None:
@@ -127,6 +105,5 @@ class AuthClient:
             return None
 
     async def close(self):
-        """Закрыть HTTP клиент"""
         await self.client.aclose()
 

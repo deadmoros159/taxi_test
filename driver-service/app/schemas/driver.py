@@ -5,7 +5,6 @@ from app.models.driver import DriverStatus
 
 
 class VehicleCreate(BaseModel):
-    """Схема для создания автомобиля"""
     brand: str = Field(..., min_length=1, max_length=50)
     model: str = Field(..., min_length=1, max_length=50)
     year: int = Field(..., ge=1900, le=2100)
@@ -19,7 +18,6 @@ class VehicleCreate(BaseModel):
 
 
 class DriverRegisterRequest(BaseModel):
-    """Запрос на регистрацию водителя для существующего пользователя (от диспетчера)"""
     user_id: int = Field(..., description="ID пользователя из auth-service")
     license_number: str = Field(..., min_length=1, max_length=50)
     license_expiry: datetime
@@ -34,26 +32,19 @@ class DriverRegisterRequest(BaseModel):
 
 
 class DriverFullRegisterRequest(BaseModel):
-    """Запрос на полную регистрацию водителя с нуля (создание пользователя + водителя + авто)"""
-    # Данные пользователя
     full_name: str = Field(..., min_length=1, max_length=100, description="Полное имя")
     phone_number: str = Field(..., min_length=10, max_length=20, description="Номер телефона")
-    email: Optional[str] = Field(None, max_length=100, description="Email (опционально)")
-    
-    # Данные водителя
+    email: Optional[str] = Field(None, max_length=100)
     license_number: str = Field(..., min_length=1, max_length=50, description="Номер водительского удостоверения")
     license_expiry: datetime = Field(..., description="Срок действия прав")
-    passport_number: str = Field(..., min_length=1, max_length=50, description="Номер паспорта")
-    license_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=document) фото прав")
-    passport_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=document) фото паспорта")
-    driver_photo_media_id: Optional[int] = Field(None, description="ID медиа (tag=profile_photo) фото водителя")
-    
-    # Данные автомобиля
+    passport_number: str = Field(..., min_length=1, max_length=50)
+    license_photo_media_id: Optional[int] = Field(None)
+    passport_photo_media_id: Optional[int] = Field(None)
+    driver_photo_media_id: Optional[int] = Field(None)
     vehicle: VehicleCreate
 
 
 class VehicleResponse(BaseModel):
-    """Ответ с информацией об автомобиле"""
     id: int
     brand: str
     model: str
@@ -73,7 +64,6 @@ class VehicleResponse(BaseModel):
 
 
 class DriverResponse(BaseModel):
-    """Ответ с информацией о водителе"""
     id: int
     user_id: int
     license_number: str
@@ -96,12 +86,10 @@ class DriverResponse(BaseModel):
 
 
 class DriverStatusUpdate(BaseModel):
-    """Обновление статуса водителя"""
     status: DriverStatus
 
 
 class VehicleUpdate(BaseModel):
-    """Обновление информации об автомобиле"""
     brand: Optional[str] = None
     model: Optional[str] = None
     year: Optional[int] = None
@@ -115,29 +103,12 @@ class VehicleUpdate(BaseModel):
 
 
 class DriverMediaUpdate(BaseModel):
-    """Обновление медиа-идентификаторов документов/фото водителя"""
     license_photo_media_id: Optional[int] = None
     passport_photo_media_id: Optional[int] = None
     driver_photo_media_id: Optional[int] = None
-    vehicle_photo_url: Optional[str] = None
-    vehicle_photo_media_id: Optional[int] = None
-
-
-class FleetStatsResponse(BaseModel):
-    total_vehicles: int
-
-
-class FleetVehicleItem(BaseModel):
-    vehicle_id: int
-    driver_id: int
-    user_id: int
-    brand: str
-    model: str
-    license_plate: str
 
 
 class VehicleRegisterRequest(BaseModel):
-    """Запрос на регистрацию автомобиля для существующего водителя"""
     vehicle: VehicleCreate
 
 

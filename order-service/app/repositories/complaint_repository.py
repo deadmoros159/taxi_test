@@ -41,14 +41,6 @@ class ComplaintRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_complaints_by_order(self, order_id: int) -> List[Complaint]:
-        """Получить все жалобы по заказу"""
-        result = await self.db.execute(
-            select(Complaint).where(Complaint.order_id == order_id)
-            .order_by(Complaint.created_at.desc())
-        )
-        return list(result.scalars().all())
-
     async def get_all_complaints(
         self,
         status: Optional[ComplaintStatus] = None,

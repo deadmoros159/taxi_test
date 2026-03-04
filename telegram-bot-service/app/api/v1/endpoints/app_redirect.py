@@ -1,8 +1,3 @@
-"""
-Страница-редирект для deep link в мобильное приложение.
-Принимает query-параметры и отдаёт HTML.
-Android: Intent URL (работает в WebView Telegram), iOS: taxiapp://
-"""
 import json
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -14,17 +9,10 @@ router = APIRouter()
 
 @router.api_route("/auth", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def app_auth_redirect(request: Request):
-    """
-    Страница для открытия мобильного приложения.
-    Режимы:
-    1) token + state — новый флоу (кнопка из бота): редирект на taxiapp://auth?token=&state=
-    2) telegram_id, phone... — старый флоу
-    """
     params = dict(request.query_params)
     base = str(settings.APP_REDIRECT_BASE_URL).rstrip("/")
     current_url = f"{base}/app/auth" + ("?" + urlencode(params) if params else "")
 
-    # Режим: code (одноразовый код) + state — новый флоу
     code = params.get("code")
     state = params.get("state")
     if code:
@@ -33,7 +21,6 @@ async def app_auth_redirect(request: Request):
             taxiapp_params["state"] = state
         qs = urlencode(taxiapp_params)
         taxiapp_uri = "taxiapp://auth?" + qs
-        # Intent для Android
         package = settings.ANDROID_PACKAGE or "com.example.taxi_app"
         fallback_url = current_url + ("&" if "?" in current_url else "?") + "fallback=1"
         intent_uri = (
@@ -41,7 +28,6 @@ async def app_auth_redirect(request: Request):
             f"S.browser_fallback_url={fallback_url};end"
         )
     else:
-        # Старый флоу: telegram_id, phone, name...
         taxiapp_params = {k: v for k, v in params.items() if k in ("telegram_id", "phone", "name", "username", "photo_id")}
         qs = urlencode(taxiapp_params)
         taxiapp_uri = "taxiapp://auth" + ("?" + qs if qs else "")

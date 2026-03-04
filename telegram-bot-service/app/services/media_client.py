@@ -7,8 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 class MediaClient:
-    """Клиент для работы с media-service API"""
-
     def __init__(self):
         self.base_url = settings.MEDIA_SERVICE_URL
         self.client = httpx.AsyncClient(
@@ -25,19 +23,6 @@ class MediaClient:
         tag: str = "PROFILE_PHOTO",
         token: Optional[str] = None
     ) -> Optional[Dict]:
-        """
-        Загрузить файл в media-service
-
-        Args:
-            file_data: Байты файла
-            filename: Имя файла
-            mime_type: MIME тип файла (например, "image/jpeg")
-            tag: Тег файла (PROFILE_PHOTO, DOCUMENT, etc.)
-            token: JWT токен для авторизации (опционально, если нужна авторизация)
-
-        Returns:
-            Dict с media_id и другими данными или None при ошибке
-        """
         url = f"{self.base_url}/api/v1/media/upload"
         headers = {}
         if token:
@@ -75,6 +60,5 @@ class MediaClient:
             return None
 
     async def close(self):
-        """Закрыть HTTP клиент"""
         await self.client.aclose()
 

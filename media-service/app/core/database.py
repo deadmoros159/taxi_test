@@ -5,7 +5,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Создаем async engine
 engine = create_async_engine(
     str(settings.DATABASE_URL),
     echo=settings.DEBUG,
@@ -15,7 +14,6 @@ engine = create_async_engine(
     max_overflow=20,
 )
 
-# Создаем session factory
 AsyncSessionLocal = async_sessionmaker(
     engine,
     class_=AsyncSession,
@@ -24,7 +22,6 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
-# Базовый класс для моделей
 Base = declarative_base()
 
 

@@ -46,15 +46,6 @@ class OrderResponse(BaseModel):
         from_attributes = True
 
 
-class OrderUpdate(BaseModel):
-    """Схема обновления заказа"""
-    status: Optional[OrderStatus] = None
-    end_latitude: Optional[float] = None
-    end_longitude: Optional[float] = None
-    end_address: Optional[str] = None
-    price: Optional[float] = None
-
-
 class OrderCancel(BaseModel):
     """Схема отмены заказа"""
     reason: str = Field(..., min_length=10, description="Причина отмены (минимум 10 символов)")

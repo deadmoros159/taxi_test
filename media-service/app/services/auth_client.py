@@ -7,8 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 class AuthClient:
-    """Клиент для проверки токенов через auth-service"""
-
     def __init__(self):
         self.base_url = settings.AUTH_SERVICE_URL
         self.client = httpx.AsyncClient(
@@ -18,7 +16,6 @@ class AuthClient:
         )
 
     async def verify_token(self, token: str) -> Optional[Dict]:
-        """Проверить токен через auth-service"""
         try:
             response = await self.client.get(
                 f"{self.base_url}/api/v1/auth/verify",
@@ -36,6 +33,5 @@ class AuthClient:
             return None
 
     async def close(self):
-        """Закрыть HTTP клиент"""
         await self.client.aclose()
 

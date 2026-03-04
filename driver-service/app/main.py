@@ -3,13 +3,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
-import re
-
 import sys
 import os
 from sqlalchemy import text
 
-# Добавляем shared library в путь
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 from app.core.config import settings
@@ -26,11 +23,9 @@ async def lifespan(app: FastAPI):
     """Lifespan для управления ресурсами"""
     # Startup
     logger.info("Starting Driver Service", version=settings.VERSION)
-    # Создаем таблицы из моделей (без Alembic)
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            # Добавляем новые колонки для media_id, если сервис уже в проде
             await conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS license_photo_media_id INTEGER"))
             await conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS passport_photo_media_id INTEGER"))
             await conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS driver_photo_media_id INTEGER"))
@@ -62,8 +57,6 @@ allow_headers = list(settings.CORS_ALLOW_HEADERS) if isinstance(settings.CORS_AL
 if "*" in cors_origins:
     cors_allow_credentials = False
 
-# allow_origin_regex — только str, не list (иначе Starlette даёт TypeError)
-# localhost regex только для development
 cors_kwargs = dict(
     allow_origins=cors_origins,
     allow_credentials=cors_allow_credentials,
@@ -92,7 +85,6 @@ async def correlation_id_middleware(request: Request, call_next):
     return response
 
 
-# Подключаем роутеры
 app.include_router(drivers.router, prefix=settings.API_V1_PREFIX)
 
 

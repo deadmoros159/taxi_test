@@ -4,7 +4,6 @@ from app.core.database import get_db
 from app.schemas.auth import (
     PhoneAuthRequest,
     EmailAuthRequest,
-    VerifyCodeRequest,
     VerifyPhoneCodeRequest,
     VerifyEmailCodeRequest,
     TelegramAuthRequest,
@@ -50,7 +49,6 @@ async def request_phone_code(
 
     Rate limited: 10 запросов в минуту с одного IP
     """
-    # Проверка rate limit
     await rate_limiter.check_request_limit(request, phone_request.phone_number)
 
     auth_service = AuthService(db)
@@ -60,8 +58,6 @@ async def request_phone_code(
     )
 
     if not success:
-        # Проверяем, используется ли mock режим
-        from app.core.config import settings
         if settings.SMS_PROVIDER == "mock":
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -88,7 +84,6 @@ async def verify_phone_code(
     """
     Проверка SMS кода и получение токенов.
     """
-    # Проверка rate limit для верификации
     await rate_limiter.check_request_limit(
         request,
         f"verify:{verify_request.phone_number}"
@@ -130,7 +125,6 @@ async def request_email_code(
 
     Rate limited: 10 запросов в минуту с одного IP
     """
-    # Проверка rate limit
     await rate_limiter.check_request_limit(request, email_request.email)
 
     auth_service = AuthService(db)
@@ -140,7 +134,6 @@ async def request_email_code(
     )
 
     if not success:
-        from app.core.config import settings
         if settings.ENVIRONMENT == "development":
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -167,7 +160,6 @@ async def verify_email_code(
     """
     Проверка кода из email и получение токенов.
     """
-    # Проверка rate limit для верификации
     await rate_limiter.check_request_limit(
         request,
         f"verify_email:{verify_request.email}"
@@ -202,41 +194,7 @@ async def authorize_via_telegram(
         telegram_request: TelegramAuthRequest,
         db: AsyncSession = Depends(get_db)
 ):
-    """
-    Авторизация через Telegram (независимый метод, не требует других способов авторизации).
-    
-    Принимает данные от Telegram SDK/API и создает/находит пользователя в системе.
-    Все данные (имя, телефон, telegram_user_id) автоматически сохраняются в БД.
-    
-    Как это работает:
-    1. Пользователь нажимает "Войти через Telegram" в приложении
-    2. Открывается Telegram (через SDK/deep link)
-    3. Пользователь подтверждает авторизацию
-    4. Telegram возвращает данные: phone_number, full_name, telegram_user_id, telegram_username
-    5. Приложение отправляет эти данные на этот endpoint
-    6. Бэкенд:
-       - Ищет пользователя по telegram_user_id
-       - Если не найден - создает нового пользователя
-       - Если найден - обновляет данные (имя, телефон, username)
-    7. Бэкенд возвращает JWT токены
-    
-    Пример запроса:
-    {
-      "phone_number": "+79991234567",
-      "full_name": "Иван Иванов",
-      "telegram_user_id": 123456789,
-      "telegram_username": "ivan_ivanov"  // опционально
-    }
-    
-    Ответ:
-    {
-      "access_token": "...",
-      "refresh_token": "...",
-      "token_type": "bearer",
-      "expires_in": 3600
-    }
-    """
-    # Проверка rate limit
+    """Авторизация через Telegram. Создаёт или находит пользователя по данным из Telegram SDK."""
     await rate_limiter.check_request_limit(
         request,
         f"telegram:{telegram_request.phone_number}"
@@ -448,7 +406,6 @@ async def admin_register(
             detail=str(e),
         )
 
-    # full_name is intentionally not part of the admin register payload anymore
     admin_user = await user_repo.create_user(
         email=str(payload.email),
         full_name="Admin",

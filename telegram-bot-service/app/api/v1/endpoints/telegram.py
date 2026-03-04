@@ -1,8 +1,3 @@
-"""
-Proxy endpoints for Telegram auth/check.
-These endpoints forward requests to auth-service.
-"""
-
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional

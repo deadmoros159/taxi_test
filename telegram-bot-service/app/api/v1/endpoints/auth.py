@@ -1,6 +1,3 @@
-"""
-API endpoints для авторизации через Telegram
-"""
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -14,7 +11,6 @@ router = APIRouter()
 
 
 class TelegramAuthRequest(BaseModel):
-    """Запрос на авторизацию через Telegram"""
     phone_number: str = Field(..., description="Номер телефона в формате +998XXXXXXXXX")
     full_name: str = Field(..., description="Полное имя пользователя")
     telegram_user_id: int = Field(..., description="ID пользователя в Telegram")
@@ -22,7 +18,6 @@ class TelegramAuthRequest(BaseModel):
 
 
 class TelegramAuthResponse(BaseModel):
-    """Ответ с токенами после авторизации"""
     access_token: str = Field(..., description="JWT access token")
     refresh_token: str = Field(..., description="JWT refresh token")
     token_type: str = Field(default="bearer", description="Тип токена")
@@ -34,12 +29,6 @@ class TelegramAuthResponse(BaseModel):
 
 @router.post("/authorize", response_model=TelegramAuthResponse)
 async def authorize_via_telegram(request: TelegramAuthRequest):
-    """
-    Авторизация через Telegram (API endpoint).
-    
-    Принимает данные пользователя из Telegram и возвращает JWT токены.
-    Используется клиентскими приложениями для получения токенов.
-    """
     auth_client = AuthClient()
     try:
         result = await auth_client.authorize_via_telegram(

@@ -4,17 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import structlog
-import re
 
 from app.core.config import settings
 from app.core.database import engine, Base, check_db_connection
 from app.api.v1.endpoints import orders, complaints, ratings
 from sqlalchemy import text
 
-# Импортируем все модели для создания таблиц
 from app.models import order, driver_debt, complaint, rating  # noqa: F401
 
-# Настройка логирования
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,

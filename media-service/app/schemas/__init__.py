@@ -1,12 +1,4 @@
-from app.schemas.media import (
-    MediaUploadResponse,
-    MediaInfoResponse,
-    MediaFileResponse,
-)
+from app.schemas.media import MediaUploadResponse, MediaInfoResponse
 
-__all__ = [
-    "MediaUploadResponse",
-    "MediaInfoResponse",
-    "MediaFileResponse",
-]
+__all__ = ["MediaUploadResponse", "MediaInfoResponse"]
 

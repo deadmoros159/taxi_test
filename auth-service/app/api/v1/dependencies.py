@@ -1,6 +1,3 @@
-"""
-Dependencies для проверки аутентификации и авторизации
-"""
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, List
@@ -19,12 +16,7 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> User:
-    """
-    Получить текущего аутентифицированного пользователя
-    
-    Raises:
-        HTTPException: Если токен невалидный или пользователь не найден
-    """
+    """Получить текущего пользователя из токена (с проверкой в БД)."""
     token = credentials.credentials
     token_data = token_service.verify_access_token(token)
     
@@ -63,9 +55,7 @@ async def get_current_user(
 async def get_current_user_id(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> int:
-    """
-    Получить только ID текущего пользователя (без запроса к БД)
-    """
+    """Получить ID текущего пользователя из токена (без запроса к БД)."""
     token = credentials.credentials
     token_data = token_service.verify_access_token(token)
     
@@ -86,15 +76,6 @@ async def get_current_user_id(
 
 
 def require_role(allowed_roles: List[UserRole]):
-    """
-    Dependency factory для проверки роли пользователя
-    
-    Args:
-        allowed_roles: Список разрешенных ролей
-    
-    Returns:
-        Dependency function
-    """
     async def role_checker(
         current_user: User = Depends(get_current_user)
     ) -> User:
@@ -111,15 +92,8 @@ def require_role(allowed_roles: List[UserRole]):
     return role_checker
 
 
-# Готовые зависимости для разных ролей
 require_admin = require_role([UserRole.ADMIN])
 require_dispatcher = require_role([UserRole.DISPATCHER, UserRole.ADMIN])
-require_driver = require_role([UserRole.DRIVER, UserRole.ADMIN])
-require_passenger = require_role([UserRole.PASSENGER, UserRole.ADMIN])
-
-# Для управления водителями (диспетчеры и админы)
 require_driver_management = require_role([UserRole.DISPATCHER, UserRole.ADMIN])
-
-# Для управления пользователями (только админы)
 require_user_management = require_role([UserRole.ADMIN])
 

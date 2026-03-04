@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.repositories.media_repository import MediaRepository
 from app.services.storage_service import storage_service
 from app.services.auth_client import AuthClient
-from app.schemas.media import MediaUploadResponse, MediaInfoResponse, MediaFileResponse
+from app.schemas.media import MediaUploadResponse, MediaInfoResponse
 from app.models.media import MediaTag
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,6 @@ security = HTTPBearer()
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
-    """Получить текущего пользователя из токена"""
     token = credentials.credentials
     auth_client = AuthClient()
     try:
@@ -38,16 +37,6 @@ async def get_current_user(
         return user_data
     finally:
         await auth_client.close()
-
-
-async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
-    """Dependency для проверки роли администратора"""
-    if current_user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can access this resource"
-        )
-    return current_user
 
 
 @router.post("/upload", response_model=MediaUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -65,10 +54,7 @@ async def upload_file(
     - Максимальный размер: 5 МБ
     - Разрешенные типы: изображения (JPEG, PNG, GIF, WebP), PDF, документы Word
     """
-    # Проверка размера файла
     MAX_SIZE_BYTES = settings.MAX_FILE_SIZE_MB * 1024 * 1024
-    
-    # Читаем файл
     file_data = await file.read()
     file_size = len(file_data)
     
@@ -84,7 +70,6 @@ async def upload_file(
             detail="File is empty"
         )
     
-    # Проверка MIME типа
     mime_type = file.content_type or "application/octet-stream"
     if mime_type not in settings.ALLOWED_MIME_TYPES:
         raise HTTPException(
@@ -92,11 +77,9 @@ async def upload_file(
             detail=f"File type {mime_type} is not allowed. Allowed types: {', '.join(settings.ALLOWED_MIME_TYPES)}"
         )
     
-    # Генерируем S3 ключ
     user_id = current_user.get("id")
     s3_key = storage_service.generate_s3_key(file.filename or "file", user_id)
     
-    # Загружаем в MinIO
     upload_success = await storage_service.upload_file(
         file_data=file_data,
         s3_key=s3_key,
@@ -109,10 +92,9 @@ async def upload_file(
             detail="Failed to upload file to storage"
         )
     
-    # Сохраняем метаданные в БД
     media_repo = MediaRepository(db)
     media_file = await media_repo.create_media_file(
-        filename=s3_key.split("/")[-1],  # Имя файла из S3 ключа
+        filename=s3_key.split("/")[-1],
         original_filename=file.filename or "file",
         mime_type=mime_type,
         size_bytes=file_size,
@@ -161,7 +143,6 @@ async def get_file(
             detail="File not found"
         )
     
-    # Проверка прав доступа
     user_role = current_user.get("role") if current_user else None
     user_id = current_user.get("id") if current_user else None
     
@@ -171,7 +152,6 @@ async def get_file(
             detail="Access denied"
         )
     
-    # Получаем файл из MinIO
     file_data_mime = await storage_service.get_file(media_file.s3_key)
     if not file_data_mime:
         raise HTTPException(
@@ -181,14 +161,10 @@ async def get_file(
     
     file_data, mime_type = file_data_mime
     
-    # Кодируем имя файла для HTTP заголовка (RFC 2231)
-    # Используем ASCII-safe имя файла для избежания UnicodeEncodeError
     safe_filename = media_file.original_filename.encode('ascii', 'ignore').decode('ascii')
     if not safe_filename:
         safe_filename = "file"
-    # Если имя файла содержит не-ASCII символы, используем RFC 2231 encoding
     if media_file.original_filename != safe_filename:
-        # Используем quoted-printable encoding для не-ASCII символов
         encoded_filename = quote(media_file.original_filename, safe='')
         content_disposition = f'inline; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}'
     else:
@@ -225,17 +201,14 @@ async def get_file_info(
             detail="File not found"
         )
     
-    # Проверка прав доступа
     user_role = current_user.get("role")
     user_id = current_user.get("id")
-    
     if user_role != "admin" and media_file.uploaded_by != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
         )
-    
-    # Генерируем полный URL
+
     if settings.MEDIA_BASE_URL:
         media_url = f"{settings.MEDIA_BASE_URL}{settings.API_V1_PREFIX}/media/{media_file.id}"
     elif request:
@@ -278,20 +251,15 @@ async def delete_file(
             detail="File not found"
         )
     
-    # Проверка прав доступа
     user_role = current_user.get("role")
     user_id = current_user.get("id")
-    
     if user_role != "admin" and media_file.uploaded_by != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
         )
-    
-    # Удаляем из MinIO
+
     await storage_service.delete_file(media_file.s3_key)
-    
-    # Удаляем из БД
     await media_repo.delete_media_file(media_id)
     
     return Response(status_code=status.HTTP_204_NO_CONTENT)

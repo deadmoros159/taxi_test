@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import structlog
-import re
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -12,7 +11,6 @@ from app.core.database import engine, Base, check_db_connection
 from app.api.v1.endpoints import router as media_router
 from app.models.media import MediaTag
 
-# Настройка логирования
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
@@ -38,12 +36,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Media Service", version=settings.VERSION, env=settings.ENVIRONMENT)
 
-    # Создаем таблицы из моделей
     logger.info("Creating database tables from models")
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            # Без Alembic: гарантируем наличие колонки tag + индекса
             await conn.execute(
                 text(
                     "ALTER TABLE media_files "
@@ -64,7 +60,6 @@ async def lifespan(app: FastAPI):
             if settings.ENVIRONMENT != "development":
                 logger.error("Failed to create tables in production mode")
 
-    # Проверяем подключения с повторными попытками (для Docker сети)
     logger.info("Checking database connection (with retries)...")
     db_ok = await check_db_connection(max_retries=10, retry_delay=3)
     if not db_ok:
@@ -72,7 +67,6 @@ async def lifespan(app: FastAPI):
         if settings.ENVIRONMENT != "development":
             raise RuntimeError("Database connection failed")
 
-    # Инициализируем хранилище (создаем bucket если нужно)
     try:
         from app.services.storage_service import storage_service
         storage_service.ensure_bucket_exists()
@@ -109,7 +103,6 @@ allow_headers = list(settings.CORS_ALLOW_HEADERS) if isinstance(settings.CORS_AL
 if "*" in cors_origins:
     cors_allow_credentials = False
 
-# allow_origin_regex — только str, только в development (избегаем TypeError в production)
 cors_kwargs = dict(
     allow_origins=cors_origins,
     allow_credentials=cors_allow_credentials,
@@ -122,7 +115,6 @@ if settings.ENVIRONMENT == "development":
 
 app.add_middleware(CORSMiddleware, **cors_kwargs)
 
-# Подключаем роутеры
 app.include_router(media_router, prefix=f"{settings.API_V1_PREFIX}/media", tags=["media"])
 
 

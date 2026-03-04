@@ -99,30 +99,13 @@ class AuthService:
                 logger.warning(f"User not found for phone: {phone_number}. User must request code first.")
                 return None
 
-            # Активируем и верифицируем пользователя после успешной проверки кода
             if not user.is_verified:
                 await self.user_repo.update_user(
-                    user.id,
-                    is_verified=True,
-                    is_active=True
+                    user.id, is_verified=True, is_active=True
                 )
                 logger.info(f"User activated and verified: {user.id}")
-            else:
-                # Активируем существующего пользователя
-                if not user.is_verified:
-                    await self.user_repo.update_user(
-                        user.id,
-                        is_verified=True,
-                        is_active=True
-                    )
-                    logger.info(f"User activated: {user.id}")
-
-                # Обновляем Firebase UID если нужно
-                if firebase_data and "firebase_uid" in firebase_data and not user.firebase_uid:
-                    await self.user_repo.update_user(
-                        user.id,
-                        firebase_uid=firebase_data["firebase_uid"]
-                    )
+            if firebase_data and "firebase_uid" in firebase_data and not user.firebase_uid:
+                await self.user_repo.update_user(user.id, firebase_uid=firebase_data["firebase_uid"])
 
             # Создаем JWT токены (включая роль)
             tokens = token_service.create_tokens(
@@ -477,62 +460,6 @@ class AuthService:
         except Exception as e:
             logger.error(f"Error during logout: {e}")
             return False
-
-    async def logout_all_sessions(self, user_id: int) -> bool:
-        """
-        Выход из всех устройств (инвалидация всех refresh токенов пользователя)
-
-        Args:
-            user_id: ID пользователя
-
-        Returns:
-            bool: Успешно ли выполнено
-        """
-        try:
-            logger.info(f"Logout from all sessions for user: {user_id}")
-
-            success = await self.token_repo.deactivate_all_user_tokens(user_id)
-
-            if success:
-                logger.info(f"All tokens deactivated for user: {user_id}")
-            else:
-                logger.warning(f"Failed to deactivate tokens for user: {user_id}")
-
-            return success
-
-        except Exception as e:
-            logger.error(f"Error logging out from all sessions: {e}")
-            return False
-
-    async def validate_access_token(self, token: str) -> Optional[dict]:
-        """
-        Валидация access токена
-
-        Args:
-            token: Access токен
-
-        Returns:
-            dict: Данные пользователя или None
-        """
-        try:
-            token_data = token_service.verify_access_token(token)
-            if not token_data:
-                return None
-
-            # Проверяем что пользователь существует и активен
-            user = await self.user_repo.get_by_id(token_data["user_id"])
-            if not user or not user.is_active:
-                return None
-
-            return {
-                "user_id": user.id,
-                "phone_number": user.phone_number,
-                "is_verified": user.is_verified
-            }
-
-        except Exception as e:
-            logger.error(f"Error validating access token: {e}")
-            return None
 
     async def request_email_code(self, email: str, full_name: str) -> bool:
         """

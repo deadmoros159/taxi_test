@@ -56,9 +56,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Сохраняем токен для дальнейшего использования
     user_data["token"] = token
-    
     return user_data
 
 
@@ -113,7 +111,6 @@ async def create_order(
     
     order = await order_service.create_order(order_data, user["id"])
     
-    # Отправляем уведомление водителям через WebSocket
     await websocket_manager.broadcast_new_order(order)
     
     return order
@@ -158,25 +155,6 @@ async def get_scheduled_orders(
     return await order_repo.get_scheduled_orders_for_drivers()
 
 
-@router.get("/pending", response_model=List[OrderResponse], tags=["Orders"])
-async def get_pending_orders(
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """Получить список ожидающих заказов (для водителей, требуется авторизация)"""
-    user = current_user
-    
-    if user.get("role") != "driver":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only drivers can view pending orders"
-        )
-    
-    order_repo = OrderRepository(db)
-    orders = await order_repo.get_pending_orders()
-    return orders
-
-
 @router.post("/{order_id}/accept", response_model=OrderResponse, tags=["Orders"])
 async def accept_order(
     order_id: int,
@@ -193,10 +171,8 @@ async def accept_order(
             detail="Only drivers can accept orders"
         )
     
-    # Получаем информацию о машине водителя через driver-service
     async with httpx.AsyncClient() as client:
         try:
-            # Используем токен из current_user
             token = user.get("token", "")
             
             driver_response = await client.get(
@@ -232,9 +208,7 @@ async def accept_order(
             detail="Cannot accept order. Order may not exist, already taken, or driver is blocked."
         )
     
-    # Отправляем обновление пассажиру
     await websocket_manager.send_order_update(order)
-    # Уведомляем других водителей
     await websocket_manager.send_order_accepted(order)
     
     return order
@@ -269,7 +243,6 @@ async def cancel_order(
             detail="Cannot cancel order. Order may not exist or you don't have permission."
         )
     
-    # Отправляем обновление через WebSocket
     await websocket_manager.send_order_update(order)
     
     return order
@@ -410,14 +383,12 @@ async def update_driver_location(
             detail="You can only update location for your own orders"
         )
     
-    # Обновляем местоположение только для активных заказов
     if order.status not in [OrderStatus.ACCEPTED, OrderStatus.DRIVER_ARRIVED, OrderStatus.IN_PROGRESS]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot update location for order with status {order.status}"
         )
     
-    # Обновляем историю маршрута (простое JSON-хранилище координат)
     import json
     from datetime import datetime as dt
     route_history = order.route_history or "[]"
@@ -445,7 +416,6 @@ async def update_driver_location(
             detail="Failed to update location"
         )
     
-    # Отправляем обновление через WebSocket
     await websocket_manager.send_order_update(updated_order)
     
     return updated_order
@@ -522,7 +492,6 @@ async def get_order_price(
             detail="Order not found"
         )
     
-    # Проверяем права доступа
     user = current_user
     user_role = user.get("role")
     user_id = user.get("id")
@@ -569,8 +538,6 @@ async def get_order_price(
             "is_final": False
         }
     
-    # Если нет точки назначения, возвращаем минимальную цену
-    from app.core.config import settings
     return {
         "order_id": order_id,
         "price": settings.MINIMUM_FARE,
@@ -687,17 +654,14 @@ async def get_order_detail_admin(
             detail="Order not found"
         )
     
-    # Получаем информацию о пассажире из auth-service
     passenger_info = None
     if order.passenger_id:
         passenger_info = await get_user_info(order.passenger_id, current_user["token"])
     
-    # Получаем информацию о водителе из auth-service
     driver_info = None
     if order.driver_id:
         driver_info = await get_user_info(order.driver_id, current_user["token"])
     
-    # Формируем ответ с полной информацией
     return OrderDetailAdminResponse(
         id=order.id,
         status=order.status,
@@ -767,7 +731,6 @@ async def update_order_status(
                 detail="Only admins, dispatchers, and drivers can update order status"
             )
     
-    # Обновляем статус
     updated_order = await order_repo.update_order_status(
         order_id=order_id,
         status=status_update.status
@@ -779,7 +742,6 @@ async def update_order_status(
             detail="Failed to update order status"
         )
     
-    # Отправляем обновление через WebSocket
     await websocket_manager.send_order_update(updated_order)
     
     return updated_order
@@ -804,14 +766,12 @@ async def get_order_history(
     
     order_repo = OrderRepository(db)
     
-    # Если не админ/диспетчер, показываем только свои заказы
     if user_role not in ["admin", "dispatcher"]:
         if user_role == "driver":
             driver_id = user_id
         elif user_role == "passenger":
             passenger_id = user_id
     
-    # Парсим даты
     from datetime import datetime
     start_dt = None
     end_dt = None
@@ -834,7 +794,6 @@ async def get_order_history(
                 detail="Invalid end_date format. Use ISO format (e.g., 2025-02-02T23:59:59Z)"
             )
     
-    # Получаем заказы
     from sqlalchemy import select, and_
     stmt = select(Order)
     
@@ -895,8 +854,7 @@ async def websocket_driver_endpoint(
     if not user_data:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
-    
-    # Проверяем права доступа: водитель может подписаться только на свои уведомления
+
     user_role = user_data.get("role")
     user_id = user_data.get("id")
     
@@ -907,12 +865,10 @@ async def websocket_driver_endpoint(
     if user_id != driver_id:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access denied: can only subscribe to your own notifications")
         return
-    
-    # Подключаем водителя
+
     await websocket_manager.connect_driver(websocket, driver_id)
     try:
         while True:
-            # Heartbeat
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")
@@ -985,49 +941,9 @@ async def websocket_order_endpoint(
         await websocket_manager.disconnect_order(websocket, order_id)
 
 
-# ==================== WebSocket Documentation ====================
-
 @router.get("/ws/info", tags=["WebSocket"])
 async def websocket_info():
-    """
-    Информация о WebSocket эндпоинтах для real-time обновлений.
-    
-    WebSocket эндпоинты не отображаются в OpenAPI/Swagger документации,
-    но доступны для использования:
-    
-    1. **ws://host/api/v1/orders/ws/driver/{driver_id}**
-       - Для водителей: получение уведомлений о новых заказах
-       - Требуется авторизация: Bearer токен в заголовке Authorization
-       - Формат: `Authorization: Bearer {token}`
-       - Водитель может подписаться только на свои уведомления
-       - Heartbeat: отправьте "ping" для получения "pong"
-    
-    2. **ws://host/api/v1/orders/ws/order/{order_id}**
-       - Для пассажиров, водителей и админов: обновления по конкретному заказу
-       - Требуется авторизация: Bearer токен в заголовке Authorization
-       - Формат: `Authorization: Bearer {token}`
-       - Пассажир может подписаться только на свои заказы
-       - Водитель может подписаться только на свои заказы
-       - Админы и диспетчеры могут подписаться на любые заказы
-       - Heartbeat: отправьте "ping" для получения "pong"
-    
-    **Пример подключения (JavaScript):**
-    ```javascript
-    const ws = new WebSocket('ws://host/api/v1/orders/ws/driver/123');
-    ws.onopen = () => {
-        ws.send(JSON.stringify({type: 'auth', token: 'your_token'}));
-    };
-    ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('Received:', data);
-    };
-    ```
-    
-    **Типы сообщений:**
-    - `new_order` - новый заказ доступен для водителя
-    - `order_update` - обновление статуса заказа
-    - `order_accepted` - заказ принят другим водителем
-    """
+    """WebSocket эндпоинты: ws/driver/{driver_id}, ws/order/{order_id}. Auth: Bearer в заголовке."""
     return {
         "websocket_endpoints": {
             "driver_notifications": {

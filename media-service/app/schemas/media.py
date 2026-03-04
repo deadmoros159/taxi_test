@@ -6,7 +6,6 @@ from app.models.media import MediaTag
 
 
 class MediaUploadResponse(BaseModel):
-    """Ответ после загрузки файла"""
     media_id: int = Field(..., description="ID загруженного файла")
     filename: str = Field(..., description="Имя файла")
     mime_type: str = Field(..., description="MIME тип файла")
@@ -17,7 +16,6 @@ class MediaUploadResponse(BaseModel):
 
 
 class MediaInfoResponse(BaseModel):
-    """Метаданные файла"""
     id: int
     filename: str
     original_filename: str
@@ -32,20 +30,4 @@ class MediaInfoResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
-class MediaFileResponse(BaseModel):
-    """Полная информация о файле (для админов)"""
-    id: int
-    filename: str
-    original_filename: str
-    mime_type: str
-    size_bytes: int
-    s3_key: str
-    uploaded_by: Optional[int] = None
-    tag: MediaTag
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 

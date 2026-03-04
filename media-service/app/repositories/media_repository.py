@@ -21,7 +21,6 @@ class MediaRepository:
         tag,
         uploaded_by: Optional[int] = None,
     ) -> MediaFile:
-        """Создать запись о файле в БД"""
         media_file = MediaFile(
             filename=filename,
             original_filename=original_filename,
@@ -37,19 +36,11 @@ class MediaRepository:
         return media_file
 
     async def get_by_id(self, media_id: int) -> Optional[MediaFile]:
-        """Получить файл по ID"""
         stmt = select(MediaFile).where(MediaFile.id == media_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_s3_key(self, s3_key: str) -> Optional[MediaFile]:
-        """Получить файл по S3 ключу"""
-        stmt = select(MediaFile).where(MediaFile.s3_key == s3_key)
-        result = await self.db.execute(stmt)
-        return result.scalar_one_or_none()
-
     async def delete_media_file(self, media_id: int) -> bool:
-        """Удалить запись о файле из БД"""
         media_file = await self.get_by_id(media_id)
         if not media_file:
             return False

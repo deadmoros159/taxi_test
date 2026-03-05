@@ -45,8 +45,8 @@ fi
 
 echo "✅ Проект обновлен!"
 echo ""
-echo "Для применения изменений:"
+echo "Для применения изменений (пересборка образов):"
 echo "  cd /opt/taxi/deploy"
-echo "  ./deploy.sh $ENV restart"
+echo "  ./deploy.sh $ENV rebuild"
 
 

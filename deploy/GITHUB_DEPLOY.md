@@ -65,18 +65,38 @@ bash setup-nginx.sh      # Настройка Nginx
 ```bash
 cd /opt/taxi/deploy
 ./update-from-github.sh prod
-./deploy.sh prod restart
+./deploy.sh prod rebuild
 ```
 
 ### Вариант 2: Автоматически через GitHub Actions
 
-1. Добавьте SSH ключ сервера в GitHub Secrets:
-   - Settings → Secrets and variables → Actions
-   - New repository secret
-   - Name: `SERVER_SSH_KEY`
-   - Value: приватный ключ с сервера (`/root/.ssh/id_rsa` или аналогичный)
+1. **На сервере:** Убедитесь, что есть SSH-ключ (или создайте новый для деплоя):
+   ```bash
+   # Проверить существующий ключ
+   cat /root/.ssh/id_rsa
 
-2. При push в `main`/`master` автоматически запустится деплой
+   # Или создать новый ключ только для деплоя
+   ssh-keygen -t ed25519 -C "github-deploy" -f /root/.ssh/github_deploy -N ""
+   cat /root/.ssh/github_deploy  # приватный ключ — скопировать в Secrets
+   ```
+
+2. **В GitHub:** Добавьте приватный ключ в Secrets:
+   - Откройте репозиторий → **Settings** → **Secrets and variables** → **Actions**
+   - **New repository secret**
+   - Name: `SERVER_SSH_KEY`
+   - Value: содержимое приватного ключа (вся строка, включая `-----BEGIN ...-----` и `-----END ...-----`)
+
+3. **Если используете новый ключ:** Добавьте публичный ключ в `~/.ssh/authorized_keys` на сервере:
+   ```bash
+   cat /root/.ssh/github_deploy.pub >> /root/.ssh/authorized_keys
+   ```
+
+4. **Автозапуск:** При каждом push в `main` или `master` GitHub Actions:
+   - подключается к серверу по SSH
+   - выполняет `git pull`
+   - запускает `./deploy.sh prod rebuild` (пересборка образов и перезапуск)
+
+5. **Ручной запуск:** Actions → Deploy to Production → Run workflow
 
 ## Структура .gitignore
 
@@ -101,10 +121,10 @@ deploy/ssl/*.pem
 ## Полезные команды
 
 ```bash
-# Обновить код и перезапустить
+# Обновить код и применить изменения (пересборка образов)
 cd /opt/taxi/deploy
 ./update-from-github.sh prod
-./deploy.sh prod restart
+./deploy.sh prod rebuild
 
 # Просмотр логов
 ./deploy.sh prod logs

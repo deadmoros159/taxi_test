@@ -63,6 +63,19 @@ class VehicleResponse(BaseModel):
         from_attributes = True
 
 
+class DriverRatingInfo(BaseModel):
+    """Рейтинг водителя (из order-service)."""
+    average_rating: float
+    total_ratings: int
+
+
+class DriverDebtInfo(BaseModel):
+    """Информация о просрочке/задолженности (из order-service)."""
+    is_blocked: bool
+    has_overdue: bool
+    overdue_count: int
+
+
 class DriverResponse(BaseModel):
     id: int
     user_id: int
@@ -80,6 +93,9 @@ class DriverResponse(BaseModel):
     registered_by: Optional[int]
     registered_at: datetime
     vehicle: Optional[VehicleResponse]
+    rating: Optional[DriverRatingInfo] = None
+    balance: Optional[float] = None
+    debt_info: Optional[DriverDebtInfo] = None
 
     class Config:
         from_attributes = True

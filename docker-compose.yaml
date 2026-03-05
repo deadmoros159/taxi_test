@@ -64,6 +64,7 @@ services:
       - POSTGRES_PORT=5432
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres-driver:5432/driver_db
       - AUTH_SERVICE_URL=http://auth-service:8000
+      - ORDER_SERVICE_URL=http://order-service:8002
     depends_on:
       postgres-driver:
         condition: service_healthy

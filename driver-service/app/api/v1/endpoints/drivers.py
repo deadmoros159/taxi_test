@@ -20,10 +20,13 @@ from app.schemas.driver import (
     VehicleRegisterRequest,
     DriverMediaUpdate,
     VehicleResponse,
+    DriverRatingInfo,
+    DriverDebtInfo,
 )
 from app.repositories.driver_repository import DriverRepository
 from app.models.driver import Driver, DriverStatus
 from app.services.auth_client import auth_client
+from app.services.order_client import order_client
 from correlation import get_correlation_id, set_correlation_id
 
 logger = logging.getLogger(__name__)
@@ -95,6 +98,88 @@ def require_driver(
             detail="Only drivers can access this endpoint"
         )
     return current_user
+
+
+def _summary_to_response_fields(summary):
+    """Из ответа order-service /drivers/{id}/summary собрать rating, balance, debt_info для DriverResponse."""
+    if not summary:
+        return None, None, None
+    rating_data = summary.get("rating")
+    rating = (
+        DriverRatingInfo(
+            average_rating=rating_data["average_rating"],
+            total_ratings=rating_data["total_ratings"],
+        )
+        if rating_data
+        else None
+    )
+    balance = summary.get("balance")
+    debt = summary.get("debt_info")
+    debt_info = (
+        DriverDebtInfo(
+            is_blocked=debt.get("is_blocked", False),
+            has_overdue=debt.get("has_overdue", False),
+            overdue_count=debt.get("overdue_count", 0),
+        )
+        if debt
+        else None
+    )
+    return rating, balance, debt_info
+
+
+def _vehicle_to_response(vehicle):
+    """Собрать VehicleResponse из модели Vehicle или None."""
+    if not vehicle:
+        return None
+    from app.schemas.driver import VehicleResponse
+    return VehicleResponse(
+        id=vehicle.id,
+        brand=vehicle.brand,
+        model=vehicle.model,
+        year=vehicle.year,
+        color=vehicle.color,
+        license_plate=vehicle.license_plate,
+        vin=vehicle.vin,
+        seats=vehicle.seats,
+        vehicle_type=vehicle.vehicle_type,
+        vehicle_photo_url=vehicle.vehicle_photo_url,
+        vehicle_photo_media_id=vehicle.vehicle_photo_media_id,
+        created_at=vehicle.created_at,
+        updated_at=vehicle.updated_at,
+    )
+
+
+async def _driver_to_response(driver, token: str = None):
+    """
+    Собрать сущность водителя (DriverResponse) с рейтингом, балансом и информацией о задолженности.
+    Если передан token — подтягивает rating, balance, debt_info из order-service.
+    """
+    vehicle_response = _vehicle_to_response(driver.vehicle)
+    rating, balance, debt_info = None, None, None
+    if token:
+        summary = await order_client.get_driver_summary(driver.user_id, token)
+        rating, balance, debt_info = _summary_to_response_fields(summary)
+    return DriverResponse(
+        id=driver.id,
+        user_id=driver.user_id,
+        license_number=driver.license_number,
+        license_expiry=driver.license_expiry,
+        passport_number=driver.passport_number,
+        license_photo_url=driver.license_photo_url,
+        passport_photo_url=driver.passport_photo_url,
+        driver_photo_url=driver.driver_photo_url,
+        license_photo_media_id=driver.license_photo_media_id,
+        passport_photo_media_id=driver.passport_photo_media_id,
+        driver_photo_media_id=driver.driver_photo_media_id,
+        status=driver.status.value,
+        is_verified=driver.is_verified,
+        registered_by=driver.registered_by,
+        registered_at=driver.registered_at,
+        vehicle=vehicle_response,
+        rating=rating,
+        balance=balance,
+        debt_info=debt_info,
+    )
 
 
 @router.get("/fleet/summary")
@@ -240,24 +325,7 @@ async def register_driver(
     
     logger.info(f"Driver registered for existing user {request.user_id} by dispatcher {dispatcher_id}")
     
-    return DriverResponse(
-        id=driver.id,
-        user_id=driver.user_id,
-        license_number=driver.license_number,
-        license_expiry=driver.license_expiry,
-        passport_number=driver.passport_number,
-        status=driver.status.value,
-        is_verified=driver.is_verified,
-        registered_by=driver.registered_by,
-        registered_at=driver.registered_at,
-        license_photo_url=driver.license_photo_url,
-        passport_photo_url=driver.passport_photo_url,
-        driver_photo_url=driver.driver_photo_url,
-        license_photo_media_id=driver.license_photo_media_id,
-        passport_photo_media_id=driver.passport_photo_media_id,
-        driver_photo_media_id=driver.driver_photo_media_id,
-        vehicle=driver.vehicle
-    )
+    return await _driver_to_response(driver, token)
 
 
 @router.post("/drivers/register-full", response_model=DriverResponse, status_code=status.HTTP_201_CREATED, tags=["Driver Registration"])
@@ -327,24 +395,7 @@ async def register_driver_full(
     
     logger.info(f"Driver registered from scratch: user_id={user_id}, driver_id={driver.id} by dispatcher {dispatcher_id}")
     
-    return DriverResponse(
-        id=driver.id,
-        user_id=driver.user_id,
-        license_number=driver.license_number,
-        license_expiry=driver.license_expiry,
-        passport_number=driver.passport_number,
-        status=driver.status.value,
-        is_verified=driver.is_verified,
-        registered_by=driver.registered_by,
-        registered_at=driver.registered_at,
-        license_photo_url=driver.license_photo_url,
-        passport_photo_url=driver.passport_photo_url,
-        driver_photo_url=driver.driver_photo_url,
-        license_photo_media_id=driver.license_photo_media_id,
-        passport_photo_media_id=driver.passport_photo_media_id,
-        driver_photo_media_id=driver.driver_photo_media_id,
-        vehicle=driver.vehicle
-    )
+    return await _driver_to_response(driver, token)
 
 
 @router.post("/drivers/{user_id}/promote-to-driver", tags=["Driver Management"])
@@ -439,42 +490,8 @@ async def register_vehicle_for_driver(
         logger.info(f"Vehicle created for driver {driver_id}")
     
     await db.refresh(driver)
-    
-    from app.schemas.driver import VehicleResponse
-    vehicle_response = VehicleResponse(
-        id=vehicle.id,
-        brand=vehicle.brand,
-        model=vehicle.model,
-        year=vehicle.year,
-        color=vehicle.color,
-        license_plate=vehicle.license_plate,
-        vin=vehicle.vin,
-        seats=vehicle.seats,
-        vehicle_type=vehicle.vehicle_type,
-        vehicle_photo_url=vehicle.vehicle_photo_url,
-        vehicle_photo_media_id=vehicle.vehicle_photo_media_id,
-        created_at=vehicle.created_at,
-        updated_at=vehicle.updated_at
-    )
-    
-    return DriverResponse(
-        id=driver.id,
-        user_id=driver.user_id,
-        license_number=driver.license_number,
-        license_expiry=driver.license_expiry,
-        passport_number=driver.passport_number,
-        license_photo_url=driver.license_photo_url,
-        passport_photo_url=driver.passport_photo_url,
-        driver_photo_url=driver.driver_photo_url,
-        license_photo_media_id=driver.license_photo_media_id,
-        passport_photo_media_id=driver.passport_photo_media_id,
-        driver_photo_media_id=driver.driver_photo_media_id,
-        status=driver.status.value,
-        is_verified=driver.is_verified,
-        registered_by=driver.registered_by,
-        registered_at=driver.registered_at,
-        vehicle=vehicle_response
-    )
+    token = current_user.get("token", "")
+    return await _driver_to_response(driver, token)
 
 
 @router.get("/drivers", response_model=List[DriverResponse], tags=["Admin Panel"])
@@ -485,48 +502,10 @@ async def get_all_drivers(
 ):
     driver_repo = DriverRepository(db)
     drivers = await driver_repo.get_all()
-    
-    from app.schemas.driver import VehicleResponse
-    
+    token = current_user.get("token", "")
     result = []
     for driver in drivers:
-        vehicle_response = None
-        if driver.vehicle:
-            vehicle_response = VehicleResponse(
-                id=driver.vehicle.id,
-                brand=driver.vehicle.brand,
-                model=driver.vehicle.model,
-                year=driver.vehicle.year,
-                color=driver.vehicle.color,
-                license_plate=driver.vehicle.license_plate,
-                vin=driver.vehicle.vin,
-                seats=driver.vehicle.seats,
-                vehicle_type=driver.vehicle.vehicle_type,
-                vehicle_photo_url=driver.vehicle.vehicle_photo_url,
-                vehicle_photo_media_id=driver.vehicle.vehicle_photo_media_id,
-                created_at=driver.vehicle.created_at,
-                updated_at=driver.vehicle.updated_at
-            )
-        
-        result.append(DriverResponse(
-            id=driver.id,
-            user_id=driver.user_id,
-            license_number=driver.license_number,
-            license_expiry=driver.license_expiry,
-            passport_number=driver.passport_number,
-            license_photo_url=driver.license_photo_url,
-            passport_photo_url=driver.passport_photo_url,
-            driver_photo_url=driver.driver_photo_url,
-            license_photo_media_id=driver.license_photo_media_id,
-            passport_photo_media_id=driver.passport_photo_media_id,
-            driver_photo_media_id=driver.driver_photo_media_id,
-            status=driver.status.value,
-            is_verified=driver.is_verified,
-            registered_by=driver.registered_by,
-            registered_at=driver.registered_at,
-            vehicle=vehicle_response
-        ))
-    
+        result.append(await _driver_to_response(driver, token))
     return result
 
 
@@ -545,25 +524,8 @@ async def get_my_driver_info(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Driver not found"
         )
-    
-    return DriverResponse(
-        id=driver.id,
-        user_id=driver.user_id,
-        license_number=driver.license_number,
-        license_expiry=driver.license_expiry,
-        passport_number=driver.passport_number,
-        status=driver.status.value,
-        is_verified=driver.is_verified,
-        registered_by=driver.registered_by,
-        registered_at=driver.registered_at,
-        license_photo_url=driver.license_photo_url,
-        passport_photo_url=driver.passport_photo_url,
-        driver_photo_url=driver.driver_photo_url,
-        license_photo_media_id=driver.license_photo_media_id,
-        passport_photo_media_id=driver.passport_photo_media_id,
-        driver_photo_media_id=driver.driver_photo_media_id,
-        vehicle=driver.vehicle
-    )
+    token = current_user.get("token", "")
+    return await _driver_to_response(driver, token)
 
 
 @router.patch("/drivers/{driver_id}/status", response_model=DriverResponse)
@@ -584,45 +546,8 @@ async def update_driver_status(
         )
     
     updated_driver = await driver_repo.update_status(driver_id, status_update.status)
-    
-    from app.schemas.driver import VehicleResponse
-    
-    vehicle_response = None
-    if updated_driver.vehicle:
-        vehicle_response = VehicleResponse(
-            id=updated_driver.vehicle.id,
-            brand=updated_driver.vehicle.brand,
-            model=updated_driver.vehicle.model,
-            year=updated_driver.vehicle.year,
-            color=updated_driver.vehicle.color,
-            license_plate=updated_driver.vehicle.license_plate,
-            vin=updated_driver.vehicle.vin,
-            seats=updated_driver.vehicle.seats,
-            vehicle_type=updated_driver.vehicle.vehicle_type,
-            vehicle_photo_url=updated_driver.vehicle.vehicle_photo_url,
-            vehicle_photo_media_id=updated_driver.vehicle.vehicle_photo_media_id,
-            created_at=updated_driver.vehicle.created_at,
-            updated_at=updated_driver.vehicle.updated_at
-        )
-    
-    return DriverResponse(
-        id=updated_driver.id,
-        user_id=updated_driver.user_id,
-        license_number=updated_driver.license_number,
-        license_expiry=updated_driver.license_expiry,
-        passport_number=updated_driver.passport_number,
-        license_photo_url=updated_driver.license_photo_url,
-        passport_photo_url=updated_driver.passport_photo_url,
-        driver_photo_url=updated_driver.driver_photo_url,
-        license_photo_media_id=updated_driver.license_photo_media_id,
-        passport_photo_media_id=updated_driver.passport_photo_media_id,
-        driver_photo_media_id=updated_driver.driver_photo_media_id,
-        status=updated_driver.status.value,
-        is_verified=updated_driver.is_verified,
-        registered_by=updated_driver.registered_by,
-        registered_at=updated_driver.registered_at,
-        vehicle=vehicle_response
-    )
+    token = current_user.get("token", "")
+    return await _driver_to_response(updated_driver, token)
 
 
 @router.patch("/drivers/{driver_id}/vehicle", response_model=DriverResponse)
@@ -655,24 +580,8 @@ async def update_vehicle(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
 
     await db.refresh(driver)
-    return DriverResponse(
-        id=driver.id,
-        user_id=driver.user_id,
-        license_number=driver.license_number,
-        license_expiry=driver.license_expiry,
-        passport_number=driver.passport_number,
-        license_photo_url=driver.license_photo_url,
-        passport_photo_url=driver.passport_photo_url,
-        driver_photo_url=driver.driver_photo_url,
-        license_photo_media_id=driver.license_photo_media_id,
-        passport_photo_media_id=driver.passport_photo_media_id,
-        driver_photo_media_id=driver.driver_photo_media_id,
-        status=driver.status.value,
-        is_verified=driver.is_verified,
-        registered_by=driver.registered_by,
-        registered_at=driver.registered_at,
-        vehicle=vehicle,
-    )
+    token = current_user.get("token", "")
+    return await _driver_to_response(driver, token)
 
 
 @router.patch("/drivers/{driver_id}/media", response_model=DriverResponse)
@@ -693,24 +602,8 @@ async def update_driver_media(
     if not updated_driver:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
 
-    return DriverResponse(
-        id=updated_driver.id,
-        user_id=updated_driver.user_id,
-        license_number=updated_driver.license_number,
-        license_expiry=updated_driver.license_expiry,
-        passport_number=updated_driver.passport_number,
-        license_photo_url=updated_driver.license_photo_url,
-        passport_photo_url=updated_driver.passport_photo_url,
-        driver_photo_url=updated_driver.driver_photo_url,
-        license_photo_media_id=updated_driver.license_photo_media_id,
-        passport_photo_media_id=updated_driver.passport_photo_media_id,
-        driver_photo_media_id=updated_driver.driver_photo_media_id,
-        status=updated_driver.status.value,
-        is_verified=updated_driver.is_verified,
-        registered_by=updated_driver.registered_by,
-        registered_at=updated_driver.registered_at,
-        vehicle=updated_driver.vehicle,
-    )
+    token = current_user.get("token", "")
+    return await _driver_to_response(updated_driver, token)
 
 
 @router.get("/admin/drivers/{driver_id}", response_model=DriverResponse, tags=["Admin Panel"])
@@ -728,45 +621,8 @@ async def get_driver_by_id_admin(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Driver not found"
         )
-    
-    from app.schemas.driver import VehicleResponse
-    
-    vehicle_response = None
-    if driver.vehicle:
-        vehicle_response = VehicleResponse(
-            id=driver.vehicle.id,
-            brand=driver.vehicle.brand,
-            model=driver.vehicle.model,
-            year=driver.vehicle.year,
-            color=driver.vehicle.color,
-            license_plate=driver.vehicle.license_plate,
-            vin=driver.vehicle.vin,
-            seats=driver.vehicle.seats,
-            vehicle_type=driver.vehicle.vehicle_type,
-            vehicle_photo_url=driver.vehicle.vehicle_photo_url,
-            vehicle_photo_media_id=driver.vehicle.vehicle_photo_media_id,
-            created_at=driver.vehicle.created_at,
-            updated_at=driver.vehicle.updated_at
-        )
-    
-    return DriverResponse(
-        id=driver.id,
-        user_id=driver.user_id,
-        license_number=driver.license_number,
-        license_expiry=driver.license_expiry,
-        passport_number=driver.passport_number,
-        license_photo_url=driver.license_photo_url,
-        passport_photo_url=driver.passport_photo_url,
-        driver_photo_url=driver.driver_photo_url,
-        license_photo_media_id=driver.license_photo_media_id,
-        passport_photo_media_id=driver.passport_photo_media_id,
-        driver_photo_media_id=driver.driver_photo_media_id,
-        status=driver.status.value,
-        is_verified=driver.is_verified,
-        registered_by=driver.registered_by,
-        registered_at=driver.registered_at,
-        vehicle=vehicle_response
-    )
+    token = current_user.get("token", "")
+    return await _driver_to_response(driver, token)
 
 
 @router.delete("/admin/drivers/{driver_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin Panel"])

@@ -23,10 +23,12 @@ jobs:
           host: 102.214.69.160
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 60m
           script: |
             cd /opt/taxi
             git pull origin main || git pull origin master
             cd deploy
-            ./deploy.sh prod restart
+            ./deploy.sh prod stop
+            ./deploy.sh prod start
 
 

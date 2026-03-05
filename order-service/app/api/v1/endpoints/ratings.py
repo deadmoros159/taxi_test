@@ -1,11 +1,13 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 import logging
 
 from app.core.database import get_db
 from app.repositories.rating_repository import RatingRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.driver_debt_repository import DriverDebtRepository
 from app.schemas.rating import RatingCreate, RatingResponse, RatingStatsResponse
 from app.api.v1.endpoints.orders import get_current_user
 
@@ -109,4 +111,52 @@ async def get_driver_rating_stats(
     stats = await rating_repo.get_rating_stats(driver_id)
     
     return stats
+
+
+@router.get("/drivers/{driver_id}/summary", tags=["Ratings"])
+async def get_driver_summary(
+    driver_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Сводка по водителю: рейтинг, баланс (долг к оплате), просрочка/задолженность.
+    Водитель — только свои данные, админ/диспетчер — любые.
+    """
+    user = current_user
+    user_id = user.get("id")
+    role = user.get("role")
+
+    if role not in ("admin", "dispatcher"):
+        if role != "driver" or user_id != driver_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied",
+            )
+
+    rating_repo = RatingRepository(db)
+    debt_repo = DriverDebtRepository(db)
+
+    stats = await rating_repo.get_rating_stats(driver_id)
+    unpaid = await debt_repo.get_unpaid_debts(driver_id=driver_id)
+
+    total_remaining = sum(d.remaining_amount for d in unpaid)
+    now = datetime.utcnow()
+    overdue = [d for d in unpaid if d.due_date < now]
+    is_blocked = any(d.is_blocked for d in unpaid)
+    has_overdue = len(overdue) > 0
+
+    return {
+        "driver_id": driver_id,
+        "rating": {
+            "average_rating": stats["average_rating"],
+            "total_ratings": stats["total_ratings"],
+        },
+        "balance": round(total_remaining, 2),
+        "debt_info": {
+            "is_blocked": is_blocked,
+            "has_overdue": has_overdue,
+            "overdue_count": len(overdue),
+        },
+    }
 

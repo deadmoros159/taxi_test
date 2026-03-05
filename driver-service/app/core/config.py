@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     )
     AUTH_SERVICE_API_KEY: Optional[str] = None  # Для межсервисной аутентификации
 
+    # Order Service (рейтинг, баланс, задолженность водителя)
+    ORDER_SERVICE_URL: str = Field(
+        default="http://order-service:8002",
+        description="URL order-service для сводки водителя",
+    )
+
     # Media Service (public URL used to store links in DB)
     MEDIA_SERVICE_PUBLIC_BASE_URL: str = Field(
         default="",

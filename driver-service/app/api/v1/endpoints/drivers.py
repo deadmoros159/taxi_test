@@ -15,6 +15,7 @@ from app.schemas.driver import (
     DriverRegisterRequest,
     DriverFullRegisterRequest,
     DriverResponse,
+    DriverListResponse,
     DriverStatusUpdate,
     VehicleUpdate,
     VehicleRegisterRequest,
@@ -22,6 +23,8 @@ from app.schemas.driver import (
     VehicleResponse,
     DriverRatingInfo,
     DriverDebtInfo,
+    DriverUserInfo,
+    DRIVER_STATUS_DISPLAY,
 )
 from app.repositories.driver_repository import DriverRepository
 from app.models.driver import Driver, DriverStatus
@@ -149,19 +152,39 @@ def _vehicle_to_response(vehicle):
     )
 
 
-async def _driver_to_response(driver, token: str = None):
+def _user_to_driver_user_info(user_data: dict):
+    """Из ответа auth-service собрать DriverUserInfo."""
+    if not user_data:
+        return None
+    return DriverUserInfo(
+        id=user_data.get("id"),
+        full_name=user_data.get("full_name", ""),
+        phone_number=user_data.get("phone_number"),
+        email=user_data.get("email"),
+    )
+
+
+async def _driver_to_response(driver, token: str = None, current_user_data: dict = None):
     """
-    Собрать сущность водителя (DriverResponse) с рейтингом, балансом и информацией о задолженности.
-    Если передан token — подтягивает rating, balance, debt_info из order-service.
+    Собрать сущность водителя (DriverResponse): user (данные из auth), рейтинг, баланс, задолженность.
+    current_user_data: если передан и user_id совпадает — используем для user (для /me не нужен запрос в auth).
+    token: для order-service summary и для auth get_user_info (админ/диспетчер).
     """
     vehicle_response = _vehicle_to_response(driver.vehicle)
     rating, balance, debt_info = None, None, None
+    user_info = None
+    if current_user_data and current_user_data.get("id") == driver.user_id:
+        user_info = _user_to_driver_user_info(current_user_data)
+    elif token:
+        user_data = await auth_client.get_user_info(driver.user_id, token)
+        user_info = _user_to_driver_user_info(user_data)
     if token:
         summary = await order_client.get_driver_summary(driver.user_id, token)
         rating, balance, debt_info = _summary_to_response_fields(summary)
+    status_val = driver.status.value
     return DriverResponse(
         id=driver.id,
-        user_id=driver.user_id,
+        user=user_info,
         license_number=driver.license_number,
         license_expiry=driver.license_expiry,
         passport_number=driver.passport_number,
@@ -171,7 +194,8 @@ async def _driver_to_response(driver, token: str = None):
         license_photo_media_id=driver.license_photo_media_id,
         passport_photo_media_id=driver.passport_photo_media_id,
         driver_photo_media_id=driver.driver_photo_media_id,
-        status=driver.status.value,
+        status=status_val,
+        status_display=DRIVER_STATUS_DISPLAY.get(status_val),
         is_verified=driver.is_verified,
         registered_by=driver.registered_by,
         registered_at=driver.registered_at,
@@ -179,6 +203,34 @@ async def _driver_to_response(driver, token: str = None):
         rating=rating,
         balance=balance,
         debt_info=debt_info,
+    )
+
+
+async def _driver_to_list_response(driver, token: str = None):
+    """Собрать карточку водителя для списка: имя, машина с госномером, рейтинг, баланс, статус."""
+    full_name = ""
+    if token:
+        user_data = await auth_client.get_user_info(driver.user_id, token)
+        if user_data:
+            full_name = user_data.get("full_name", "")
+    vehicle_display = ""
+    if driver.vehicle:
+        v = driver.vehicle
+        vehicle_display = f"{v.brand} {v.model} ({v.license_plate})"
+    rating, balance, debt_info = None, None, None
+    if token:
+        summary = await order_client.get_driver_summary(driver.user_id, token)
+        rating, balance, debt_info = _summary_to_response_fields(summary)
+    status_val = driver.status.value
+    return DriverListResponse(
+        id=driver.id,
+        full_name=full_name,
+        vehicle_display=vehicle_display,
+        rating=rating,
+        balance=balance,
+        debt_info=debt_info,
+        status=status_val,
+        status_display=DRIVER_STATUS_DISPLAY.get(status_val),
     )
 
 
@@ -494,18 +546,19 @@ async def register_vehicle_for_driver(
     return await _driver_to_response(driver, token)
 
 
-@router.get("/drivers", response_model=List[DriverResponse], tags=["Admin Panel"])
+@router.get("/drivers", response_model=List[DriverListResponse], tags=["Admin Panel"])
 async def get_all_drivers(
     request: Request,
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
+    """Список водителей для карточек: имя, машина с госномером, рейтинг, задолженность, статус."""
     driver_repo = DriverRepository(db)
     drivers = await driver_repo.get_all()
     token = current_user.get("token", "")
     result = []
     for driver in drivers:
-        result.append(await _driver_to_response(driver, token))
+        result.append(await _driver_to_list_response(driver, token))
     return result
 
 
@@ -525,7 +578,41 @@ async def get_my_driver_info(
             detail="Driver not found"
         )
     token = current_user.get("token", "")
-    return await _driver_to_response(driver, token)
+    return await _driver_to_response(driver, token, current_user_data=current_user)
+
+
+@router.post("/drivers/me/start-work", response_model=DriverResponse, tags=["Driver Status"])
+async def driver_start_work(
+    request: Request,
+    current_user: dict = Depends(require_driver),
+    db: AsyncSession = Depends(get_db),
+):
+    """Водитель выходит на линию (статус → active)."""
+    driver_repo = DriverRepository(db)
+    user_id = current_user.get("id") or current_user.get("user_id")
+    driver = await driver_repo.get_by_user_id(user_id)
+    if not driver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+    updated = await driver_repo.update_status(driver.id, DriverStatus.ACTIVE)
+    token = current_user.get("token", "")
+    return await _driver_to_response(updated, token)
+
+
+@router.post("/drivers/me/end-work", response_model=DriverResponse, tags=["Driver Status"])
+async def driver_end_work(
+    request: Request,
+    current_user: dict = Depends(require_driver),
+    db: AsyncSession = Depends(get_db),
+):
+    """Водитель заканчивает смену (статус → offline)."""
+    driver_repo = DriverRepository(db)
+    user_id = current_user.get("id") or current_user.get("user_id")
+    driver = await driver_repo.get_by_user_id(user_id)
+    if not driver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+    updated = await driver_repo.update_status(driver.id, DriverStatus.OFFLINE)
+    token = current_user.get("token", "")
+    return await _driver_to_response(updated, token)
 
 
 @router.patch("/drivers/{driver_id}/status", response_model=DriverResponse)

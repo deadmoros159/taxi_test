@@ -303,12 +303,12 @@ async def get_driver_info(driver_id: int, token: str) -> Optional[Dict[str, Any]
 @router.get("/{user_id}", response_model=UserResponse, tags=["User Management"])
 async def get_user_by_id(
     user_id: int,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_dispatcher),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Получить информацию о пользователе по ID (только для админов).
-    Используется другими сервисами для получения полной информации о пользователе.
+    Получить информацию о пользователе по ID (админ или диспетчер).
+    Используется driver-service и другими сервисами для отображения имени и контактов.
     """
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(user_id)

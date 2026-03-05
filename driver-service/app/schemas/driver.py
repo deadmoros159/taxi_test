@@ -76,9 +76,39 @@ class DriverDebtInfo(BaseModel):
     overdue_count: int
 
 
+class DriverUserInfo(BaseModel):
+    """Данные пользователя (из auth-service), вместо user_id."""
+    id: int
+    full_name: str
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
+
+
+# Человекочитаемые подписи статусов для UI (На линии / Не на линии и т.д.)
+DRIVER_STATUS_DISPLAY = {
+    "pending": "Ожидает",
+    "active": "На линии",
+    "on_order": "На заказе",
+    "offline": "Не на линии",
+    "blocked": "Заблокирован",
+}
+
+
+class DriverListResponse(BaseModel):
+    """Сокращённый ответ для списка водителей (карточки в UI)."""
+    id: int
+    full_name: str
+    vehicle_display: str
+    rating: Optional[DriverRatingInfo] = None
+    balance: Optional[float] = None
+    debt_info: Optional[DriverDebtInfo] = None
+    status: str
+    status_display: Optional[str] = None
+
+
 class DriverResponse(BaseModel):
     id: int
-    user_id: int
+    user: Optional[DriverUserInfo] = None
     license_number: str
     license_expiry: datetime
     passport_number: str
@@ -89,6 +119,7 @@ class DriverResponse(BaseModel):
     passport_photo_media_id: Optional[int] = None
     driver_photo_media_id: Optional[int] = None
     status: str
+    status_display: Optional[str] = None
     is_verified: bool
     registered_by: Optional[int]
     registered_at: datetime

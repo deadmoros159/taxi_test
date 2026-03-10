@@ -123,16 +123,13 @@ async def get_active_orders(
 ):
     """
     Получить список активных заказов (заказы со статусом PENDING, которые водитель может брать).
-    Доступно для водителей.
+    Доступно для водителей, админов и диспетчеров.
     """
-    user = current_user
-    
-    if user.get("role") != "driver":
+    if current_user.get("role") not in ("driver", "admin", "dispatcher"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only drivers can view active orders"
+            detail="Only drivers, admins and dispatchers can view active orders"
         )
-    
     order_repo = OrderRepository(db)
     return await order_repo.get_active_orders_for_drivers()
 
@@ -596,6 +593,84 @@ async def get_all_orders(
     return orders
 
 
+@router.get("/history", response_model=List[OrderResponse], tags=["Orders"])
+async def get_order_history(
+    status_filter: Optional[OrderStatus] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    driver_id: Optional[int] = None,
+    passenger_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Получить историю заказов с фильтрацией"""
+    user = current_user
+    user_role = user.get("role")
+    user_id = user["id"]
+    
+    order_repo = OrderRepository(db)
+    
+    if user_role not in ["admin", "dispatcher"]:
+        if user_role == "driver":
+            driver_id = user_id
+        elif user_role == "passenger":
+            passenger_id = user_id
+    
+    from datetime import datetime
+    start_dt = None
+    end_dt = None
+    
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        except:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid start_date format. Use ISO format (e.g., 2025-02-02T00:00:00Z)"
+            )
+    
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        except:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid end_date format. Use ISO format (e.g., 2025-02-02T23:59:59Z)"
+            )
+    
+    from sqlalchemy import select, and_
+    stmt = select(Order)
+    
+    conditions = []
+    
+    if status_filter:
+        conditions.append(Order.status == status_filter)
+    
+    if driver_id:
+        conditions.append(Order.driver_id == driver_id)
+    
+    if passenger_id:
+        conditions.append(Order.passenger_id == passenger_id)
+    
+    if start_dt:
+        conditions.append(Order.created_at >= start_dt)
+    
+    if end_dt:
+        conditions.append(Order.created_at <= end_dt)
+    
+    if conditions:
+        stmt = stmt.where(and_(*conditions))
+    
+    stmt = stmt.order_by(Order.created_at.desc()).limit(limit).offset(offset)
+    
+    result = await db.execute(stmt)
+    orders = list(result.scalars().all())
+    
+    return orders
+
+
 @router.get("/{order_id}", response_model=OrderResponse, tags=["Orders"])
 async def get_order(
     order_id: int,
@@ -745,84 +820,6 @@ async def update_order_status(
     await websocket_manager.send_order_update(updated_order)
     
     return updated_order
-
-
-@router.get("/history", response_model=List[OrderResponse], tags=["Orders"])
-async def get_order_history(
-    status_filter: Optional[OrderStatus] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    driver_id: Optional[int] = None,
-    passenger_id: Optional[int] = None,
-    limit: int = 100,
-    offset: int = 0,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """Получить историю заказов с фильтрацией"""
-    user = current_user
-    user_role = user.get("role")
-    user_id = user["id"]
-    
-    order_repo = OrderRepository(db)
-    
-    if user_role not in ["admin", "dispatcher"]:
-        if user_role == "driver":
-            driver_id = user_id
-        elif user_role == "passenger":
-            passenger_id = user_id
-    
-    from datetime import datetime
-    start_dt = None
-    end_dt = None
-    
-    if start_date:
-        try:
-            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-        except:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid start_date format. Use ISO format (e.g., 2025-02-02T00:00:00Z)"
-            )
-    
-    if end_date:
-        try:
-            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-        except:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid end_date format. Use ISO format (e.g., 2025-02-02T23:59:59Z)"
-            )
-    
-    from sqlalchemy import select, and_
-    stmt = select(Order)
-    
-    conditions = []
-    
-    if status_filter:
-        conditions.append(Order.status == status_filter)
-    
-    if driver_id:
-        conditions.append(Order.driver_id == driver_id)
-    
-    if passenger_id:
-        conditions.append(Order.passenger_id == passenger_id)
-    
-    if start_dt:
-        conditions.append(Order.created_at >= start_dt)
-    
-    if end_dt:
-        conditions.append(Order.created_at <= end_dt)
-    
-    if conditions:
-        stmt = stmt.where(and_(*conditions))
-    
-    stmt = stmt.order_by(Order.created_at.desc()).limit(limit).offset(offset)
-    
-    result = await db.execute(stmt)
-    orders = list(result.scalars().all())
-    
-    return orders
 
 
 # WebSocket endpoints

@@ -9,11 +9,10 @@ class OrderCreate(BaseModel):
     start_latitude: float = Field(..., description="Широта точки отправления")
     start_longitude: float = Field(..., description="Долгота точки отправления")
     start_address: str = Field(..., description="Адрес отправления")
-    end_latitude: Optional[float] = Field(None, description="Широта точки назначения")
-    end_longitude: Optional[float] = Field(None, description="Долгота точки назначения")
-    end_address: Optional[str] = Field(None, description="Адрес назначения")
-    # Дата и время заказа (опционально, если не указано - используется текущее время)
-    order_date: Optional[datetime] = Field(None, description="Дата и время заказа (если не указано, используется текущее время)")
+    end_latitude: float = Field(..., description="Широта точки назначения")
+    end_longitude: float = Field(..., description="Долгота точки назначения")
+    end_address: str = Field(..., description="Адрес назначения")
+    order_date: Optional[datetime] = Field(None, description="Дата и время заказа (если не указано — текущее время)")
 
 
 class OrderResponse(BaseModel):

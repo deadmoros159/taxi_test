@@ -56,7 +56,7 @@ class OrderRepository:
                 Order.status == OrderStatus.PENDING,
                 (Order.order_date.is_(None)) | (Order.order_date <= now),
             )
-            .order_by(Order.order_date.desc().nullslast(), Order.created_at.desc())
+            .order_by(Order.order_date.desc().nulls_last(), Order.created_at.desc())
         )
         return list(result.scalars().all())
 

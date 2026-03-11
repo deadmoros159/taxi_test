@@ -238,6 +238,8 @@ services:
   postgres-auth:
     image: postgres:15-alpine
     container_name: taxi-postgres-auth-prod
+    ports:
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: auth_db
       POSTGRES_USER: postgres
@@ -257,6 +259,8 @@ services:
   postgres-driver:
     image: postgres:15-alpine
     container_name: taxi-postgres-driver-prod
+    ports:
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_DB: driver_db
       POSTGRES_USER: postgres
@@ -275,6 +279,8 @@ services:
   postgres-order:
     image: postgres:15-alpine
     container_name: taxi-postgres-order-prod
+    ports:
+      - "127.0.0.1:5434:5432"
     environment:
       POSTGRES_DB: order_db
       POSTGRES_USER: postgres
@@ -293,6 +299,8 @@ services:
   postgres-media:
     image: postgres:15-alpine
     container_name: taxi-postgres-media-prod
+    ports:
+      - "127.0.0.1:5435:5432"
     environment:
       POSTGRES_DB: media_db
       POSTGRES_USER: postgres

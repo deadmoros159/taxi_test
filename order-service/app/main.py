@@ -61,6 +61,16 @@ async def lifespan(app: FastAPI):
             await conn.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_orders_order_date ON orders (order_date)")
             )
+            # Колонки из миграции 002 (если Alembic не запускался)
+            await conn.execute(
+                text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS actual_distance_km FLOAT")
+            )
+            await conn.execute(
+                text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS actual_time_minutes INTEGER")
+            )
+            await conn.execute(
+                text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS route_history TEXT")
+            )
         logger.info("Database tables created successfully")
     except Exception as e:
         error_str = str(e).lower()

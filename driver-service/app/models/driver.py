@@ -17,7 +17,7 @@ class Driver(Base):
     __tablename__ = "drivers"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, unique=True, nullable=False, index=True)  # ID в auth-service, FK не ставим — таблица в другой БД
     
     license_number = Column(String, unique=True, nullable=False, index=True)
     license_expiry = Column(DateTime(timezone=True), nullable=False)
@@ -32,7 +32,7 @@ class Driver(Base):
     
     status = Column(SQLEnum(DriverStatus), default=DriverStatus.PENDING, nullable=False, index=True)
     is_verified = Column(Boolean, default=False)
-    registered_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    registered_by = Column(Integer, nullable=True)  # ID диспетчера в auth-service
     registered_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

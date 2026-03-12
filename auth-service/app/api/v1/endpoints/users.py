@@ -377,7 +377,7 @@ class CreateUserRequest(BaseModel):
     email: Optional[str] = Field(None, max_length=100)
 
 
-@router.post("/users/create", response_model=UserResponse, tags=["User Management"])
+@router.post("/create", response_model=UserResponse, tags=["User Management"])
 async def create_user_direct(
     request_data: CreateUserRequest,
     current_user: User = Depends(require_driver_management),

@@ -2,6 +2,7 @@ import sys
 import os
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import Response
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 import logging
@@ -34,46 +35,43 @@ from correlation import get_correlation_id, set_correlation_id
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+security = HTTPBearer(description="Bearer токен из auth-service (получить через /api/v1/auth/login)")
+
+router = APIRouter(
+    dependencies=[Depends(security)],
+    responses={401: {"description": "Требуется авторизация (Bearer токен)"}},
+)
 
 
 async def get_current_user_from_token(
     request: Request,
-    authorization: str = Depends(lambda: None)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
+    """Проверка токена через auth-service. Требуется роль admin, dispatcher или driver."""
     correlation_id = request.headers.get("X-Correlation-ID")
     if correlation_id:
         set_correlation_id(correlation_id)
     else:
         set_correlation_id()
-    
-    if not authorization:
-        authorization = request.headers.get("Authorization", "")
-    
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
-    
-    token = authorization.replace("Bearer ", "")
+
+    token = credentials.credentials
     user_data = await auth_client.verify_token(token)
-    
+
     if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     role = user_data.get("role")
     if role not in ["dispatcher", "admin", "driver"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+            detail="Access denied",
         )
-    
+
     user_data["token"] = token
-    
     return user_data
 
 

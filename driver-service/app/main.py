@@ -45,8 +45,35 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     root_path=settings.ROOT_PATH,  # Префикс пути для работы за прокси
-    lifespan=lifespan
+    lifespan=lifespan,
+    swagger_ui_parameters={"persistAuthorization": True},
 )
+
+# Явно добавляем схему Bearer в OpenAPI, чтобы в Swagger отображалась кнопка Authorize
+from fastapi.openapi.utils import get_openapi
+
+def driver_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        openapi_version=app.openapi_version,
+        description=app.description,
+        routes=app.routes,
+    )
+    openapi_schema.setdefault("components", {})
+    openapi_schema["components"].setdefault("securitySchemes", {})
+    openapi_schema["components"]["securitySchemes"]["HTTPBearer"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Bearer токен из auth-service (получить через /api/v1/auth/login)",
+    }
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = driver_openapi
 
 # CORS
 cors_origins = list(settings.CORS_ORIGINS) if isinstance(settings.CORS_ORIGINS, list) else [str(settings.CORS_ORIGINS)]

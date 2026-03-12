@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
+from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from app.models.driver import Driver, Vehicle, DriverStatus
 from app.schemas.driver import VehicleCreate
@@ -13,22 +14,22 @@ class DriverRepository:
         self.db = db
 
     async def get_by_id(self, driver_id: int) -> Optional[Driver]:
-        stmt = select(Driver).where(Driver.id == driver_id)
+        stmt = select(Driver).options(selectinload(Driver.vehicle)).where(Driver.id == driver_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_user_id(self, user_id: int) -> Optional[Driver]:
-        stmt = select(Driver).where(Driver.user_id == user_id)
+        stmt = select(Driver).options(selectinload(Driver.vehicle)).where(Driver.user_id == user_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_license(self, license_number: str) -> Optional[Driver]:
-        stmt = select(Driver).where(Driver.license_number == license_number)
+        stmt = select(Driver).options(selectinload(Driver.vehicle)).where(Driver.license_number == license_number)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_all(self) -> List[Driver]:
-        stmt = select(Driver).order_by(Driver.created_at.desc())
+        stmt = select(Driver).options(selectinload(Driver.vehicle)).order_by(Driver.created_at.desc())
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
@@ -83,7 +84,7 @@ class DriverRepository:
         await self.db.commit()
         await self.db.refresh(driver)
         await self.db.refresh(vehicle)
-        
+        driver.vehicle = vehicle  # избегаем lazy load в async при доступе driver.vehicle
         logger.info(f"Driver created: {driver.id} for user {user_id}")
         return driver
 

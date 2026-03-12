@@ -62,6 +62,12 @@ def driver_openapi():
         description=app.description,
         routes=app.routes,
     )
+    # Базовый URL для Swagger: запросы из /docs должны идти через /driver (nginx)
+    openapi_schema.setdefault("servers", [])
+    if not openapi_schema["servers"] or openapi_schema["servers"][0].get("url") == "/":
+        openapi_schema["servers"] = [
+            {"url": settings.ROOT_PATH or "/", "description": "Текущий сервер (через nginx)"},
+        ]
     openapi_schema.setdefault("components", {})
     openapi_schema["components"].setdefault("securitySchemes", {})
     openapi_schema["components"]["securitySchemes"]["HTTPBearer"] = {

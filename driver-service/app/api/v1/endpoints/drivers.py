@@ -324,7 +324,12 @@ async def register_driver(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Регистрация водителя для существующего пользователя. Диспетчер/админ."""
+    """
+    Единственная ручка «сделать пользователя водителем» для уже существующего user.
+
+    Создаёт запись водителя и ТС в driver-service и выставляет роль driver в auth.
+    Вызывать только эту ручку (или register-full для регистрации с нуля). Диспетчер/админ.
+    """
     driver_repo = DriverRepository(db)
     
     existing_driver = await driver_repo.get_by_user_id(request.user_id)
@@ -396,7 +401,11 @@ async def register_driver_full(
     current_user: dict = Depends(require_dispatcher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Полная регистрация с нуля: создаёт user в auth, затем driver+vehicle."""
+    """
+    Регистрация водителя с нуля: создаёт user в auth, затем водителя и ТС в driver-service.
+
+    Единственная ручка «создать нового человека и сразу сделать водителем». Диспетчер/админ.
+    """
     driver_repo = DriverRepository(db)
     token = current_user.get("token", "")
     
@@ -467,45 +476,6 @@ async def register_driver_full(
     logger.info(f"Driver registered from scratch: user_id={user_id}, driver_id={driver.id} by dispatcher {dispatcher_id}")
     
     return await _driver_to_response(driver, token)
-
-
-@router.post("/drivers/{user_id}/promote-to-driver", tags=["Driver Management"])
-async def promote_user_to_driver(
-    user_id: int,
-    http_request: Request,
-    current_user: dict = Depends(require_dispatcher_or_admin),
-    db: AsyncSession = Depends(get_db)
-):
-    """Только смена роли в auth на driver. Полная регистрация — /drivers/register."""
-    token = current_user.get("token", "")
-    
-    user_exists = await auth_client.check_user_exists(user_id, token)
-    if not user_exists:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found in auth-service"
-        )
-    
-    driver_repo = DriverRepository(db)
-    existing_driver = await driver_repo.get_by_user_id(user_id)
-    if existing_driver:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is already registered as a driver in driver-service"
-        )
-    
-    promoted = await auth_client.promote_user_to_driver(user_id, token)
-    if not promoted:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to promote user to driver role in auth-service"
-        )
-    
-    logger.info(f"User {user_id} promoted to driver role by {current_user.get('id')}")
-    raise HTTPException(
-        status_code=status.HTTP_200_OK,
-        detail=f"User {user_id} promoted to driver role. Use /drivers/register to complete driver registration."
-    )
 
 
 @router.post("/drivers/{driver_id}/vehicles", response_model=DriverResponse, status_code=status.HTTP_201_CREATED, tags=["Vehicle Management"])

@@ -122,16 +122,16 @@ class AuthServiceClient:
             return (None, 502, str(e))
     
     async def promote_user_to_driver(self, user_id: int, token: str) -> bool:
+        """Установить роль driver в auth-service (вызов PATCH /api/v1/users/{user_id}/role)."""
         try:
             correlation_id = get_correlation_id()
             headers = {"Authorization": f"Bearer {token}"}
             if correlation_id:
                 headers["X-Correlation-ID"] = correlation_id
-
             response = await self.client.patch(
-                f"/api/v1/users/{user_id}/promote-to-driver",
+                f"/api/v1/users/{user_id}/role",
                 headers=headers,
-                json={}
+                json={"role": "driver"},
             )
             return response.status_code == 200
         except Exception as e:

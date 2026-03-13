@@ -331,34 +331,39 @@ async def get_user_by_id(
     )
 
 
-@router.patch("/users/{user_id}/role", response_model=UserResponse, tags=["User Management"])
+@router.patch("/{user_id}/role", response_model=UserResponse, tags=["User Management"])
 async def update_user_role(
     user_id: int,
     role_request: UpdateRoleRequest,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_driver_management),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Изменить роль пользователя (только для админов)
-    
-    ВАЖНО: Для регистрации водителей используйте driver-service:
-    POST /api/v1/drivers/register (в driver-service)
+    Изменить роль пользователя.
+
+    - Роль driver: диспетчер или админ (вызывается из driver-service при регистрации водителя).
+    - Другие роли (admin, dispatcher, passenger): только админ.
+
+    Чтобы сделать пользователя водителем, используйте только driver-service:
+    POST https://xhap.ru/driver/api/v1/drivers/register (существующий user)
+    или POST .../drivers/register-full (создать user и водителя с нуля).
     """
+    if role_request.role != UserRole.DRIVER and current_user.role != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin can change role to non-driver",
+        )
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(user_id)
-    
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            detail="User not found",
         )
-    
-    # Обновляем роль
     updated_user = await user_repo.update_user(
         user_id,
-        role=role_request.role.value
+        role=role_request.role.value,
     )
-    
     return UserResponse(
         id=updated_user.id,
         full_name=updated_user.full_name,
@@ -366,7 +371,8 @@ async def update_user_role(
         email=updated_user.email,
         role=updated_user.role,
         is_active=updated_user.is_active,
-        is_verified=updated_user.is_verified
+        is_verified=updated_user.is_verified,
+        photo_id=updated_user.photo_id,
     )
 
 
@@ -430,50 +436,6 @@ async def create_user_direct(
         is_active=user.is_active,
         is_verified=user.is_verified,
         photo_id=user.photo_id
-    )
-
-
-@router.patch("/users/{user_id}/promote-to-driver", response_model=UserResponse, tags=["User Management"])
-async def promote_user_to_driver(
-    user_id: int,
-    current_user: User = Depends(require_driver_management),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Перевести существующего пользователя в роль водителя (диспетчер/админ).
-
-    Используется в flow:
-    1) Пользователь зарегистрировался как обычный пассажир
-    2) В приложении нажал "Стать водителем" и пришел в офис
-    3) Диспетчер в driver-service дополняет данные (документы/авто) по user_id
-    4) После успешной регистрации в driver-service вызывается этот endpoint,
-       чтобы обновить роль в auth-service на 'driver'
-    
-    ВАЖНО: Этот endpoint вызывается из driver-service, не напрямую из клиента.
-    """
-    user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(user_id)
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    updated_user = await user_repo.update_user(
-        user_id,
-        role=UserRole.DRIVER.value,
-    )
-
-    return UserResponse(
-        id=updated_user.id,
-        full_name=updated_user.full_name,
-        phone_number=updated_user.phone_number,
-        email=updated_user.email,
-        role=updated_user.role,
-        is_active=updated_user.is_active,
-        is_verified=updated_user.is_verified,
-        photo_id=updated_user.photo_id
     )
 
 

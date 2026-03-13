@@ -340,10 +340,21 @@ async def register_driver(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="License number already exists"
         )
-    
+    existing_plate = await driver_repo.get_vehicle_by_license_plate(request.vehicle.license_plate)
+    if existing_plate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Vehicle with this license plate already registered"
+        )
+    if request.vehicle.vin:
+        existing_vin = await driver_repo.get_vehicle_by_vin(request.vehicle.vin)
+        if existing_vin:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Vehicle with this VIN already registered"
+            )
     token = current_user.get("token", "")
     user_exists = await auth_client.check_user_exists(request.user_id, token)
-    
     if not user_exists:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -395,7 +406,19 @@ async def register_driver_full(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="License number already exists"
         )
-    
+    existing_plate = await driver_repo.get_vehicle_by_license_plate(request.vehicle.license_plate)
+    if existing_plate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Vehicle with this license plate already registered"
+        )
+    if request.vehicle.vin:
+        existing_vin = await driver_repo.get_vehicle_by_vin(request.vehicle.vin)
+        if existing_vin:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Vehicle with this VIN already registered"
+            )
     user_data, auth_error_status, auth_error_detail = await auth_client.create_user_direct(
         full_name=request.full_name,
         phone_number=request.phone_number,

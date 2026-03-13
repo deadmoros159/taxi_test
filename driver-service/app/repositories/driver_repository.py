@@ -155,6 +155,18 @@ class DriverRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_vehicle_by_license_plate(self, license_plate: str) -> Optional[Vehicle]:
+        stmt = select(Vehicle).where(Vehicle.license_plate == license_plate)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_vehicle_by_vin(self, vin: Optional[str]) -> Optional[Vehicle]:
+        if not vin or not vin.strip():
+            return None
+        stmt = select(Vehicle).where(Vehicle.vin == vin.strip())
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def delete_vehicle(self, vehicle_id: int) -> bool:
         try:
             vehicle = await self.get_vehicle_by_id(vehicle_id)

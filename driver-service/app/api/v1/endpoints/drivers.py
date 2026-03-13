@@ -396,19 +396,17 @@ async def register_driver_full(
             detail="License number already exists"
         )
     
-    user_data = await auth_client.create_user_direct(
+    user_data, auth_error_status, auth_error_detail = await auth_client.create_user_direct(
         full_name=request.full_name,
         phone_number=request.phone_number,
         email=request.email,
         token=token
     )
-    
-    if not user_data:
+    if auth_error_status is not None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create user in auth-service. User may already exist."
+            status_code=min(auth_error_status, 599) if auth_error_status else 502,
+            detail=auth_error_detail or "Failed to create user in auth-service."
         )
-    
     user_id = user_data.get("id")
     if not user_id:
         raise HTTPException(

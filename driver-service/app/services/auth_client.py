@@ -77,39 +77,49 @@ class AuthServiceClient:
         phone_number: str,
         token: str,
         email: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+    ) -> tuple[Optional[Dict[str, Any]], Optional[int], Optional[str]]:
+        """
+        Создать пользователя в auth-service.
+        Returns: (user_data, error_status, error_detail).
+        При успехе: (user_data, None, None). При ошибке: (None, status_code, detail).
+        """
         try:
             correlation_id = get_correlation_id()
             headers = {"Authorization": f"Bearer {token}"}
             if correlation_id:
                 headers["X-Correlation-ID"] = correlation_id
-            
+
             payload = {
                 "full_name": full_name,
                 "phone_number": phone_number
             }
             if email:
                 payload["email"] = email
-            
+
             response = await self.client.post(
                 "/api/v1/users/create",
                 headers=headers,
                 json=payload
             )
-            
+
             if response.status_code == 200:
                 user_data = response.json()
                 logger.info(f"User created directly: {user_data.get('id')} - {phone_number}")
-                return user_data
-            elif response.status_code == 409:
-                return None
+                return (user_data, None, None)
+            try:
+                body = response.json()
+                detail = body.get("detail", response.text or f"HTTP {response.status_code}")
+            except Exception:
+                detail = response.text or f"HTTP {response.status_code}"
+            if response.status_code == 409:
+                logger.info(f"User already exists: {phone_number} - {detail}")
             else:
-                logger.error(f"Failed to create user: {response.status_code} - {response.text}")
-                return None
-            
+                logger.error(f"Failed to create user: {response.status_code} - {detail}")
+            return (None, response.status_code, detail)
+
         except Exception as e:
             logger.error(f"Error creating user directly: {e}", exc_info=True)
-            return None
+            return (None, 502, str(e))
     
     async def promote_user_to_driver(self, user_id: int, token: str) -> bool:
         try:

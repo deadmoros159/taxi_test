@@ -76,12 +76,13 @@ class AuthServiceClient:
         full_name: str,
         phone_number: str,
         token: str,
-        email: Optional[str] = None
+        email: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> tuple[Optional[Dict[str, Any]], Optional[int], Optional[str]]:
         """
         Создать пользователя в auth-service.
+        role: при "driver" пользователь создаётся сразу водителем (для register-full).
         Returns: (user_data, error_status, error_detail).
-        При успехе: (user_data, None, None). При ошибке: (None, status_code, detail).
         """
         try:
             correlation_id = get_correlation_id()
@@ -91,10 +92,12 @@ class AuthServiceClient:
 
             payload = {
                 "full_name": full_name,
-                "phone_number": phone_number
+                "phone_number": phone_number,
             }
             if email:
                 payload["email"] = email
+            if role:
+                payload["role"] = role
 
             response = await self.client.post(
                 "/api/v1/users/create",
@@ -121,8 +124,11 @@ class AuthServiceClient:
             logger.error(f"Error creating user directly: {e}", exc_info=True)
             return (None, 502, str(e))
     
-    async def promote_user_to_driver(self, user_id: int, token: str) -> bool:
-        """Установить роль driver в auth-service (вызов PATCH /api/v1/users/{user_id}/role)."""
+    async def promote_user_to_driver(self, user_id: int, token: str) -> tuple[bool, Optional[int], Optional[str]]:
+        """
+        Установить роль driver в auth-service (PATCH /api/v1/users/{user_id}/role).
+        Returns: (success, error_status, error_detail).
+        """
         try:
             correlation_id = get_correlation_id()
             headers = {"Authorization": f"Bearer {token}"}
@@ -133,10 +139,18 @@ class AuthServiceClient:
                 headers=headers,
                 json={"role": "driver"},
             )
-            return response.status_code == 200
+            if response.status_code == 200:
+                return (True, None, None)
+            try:
+                body = response.json()
+                detail = body.get("detail", response.text)
+            except Exception:
+                detail = response.text
+            logger.error(f"Promote to driver failed: {response.status_code} - {detail}")
+            return (False, response.status_code, detail)
         except Exception as e:
             logger.error(f"Error promoting user to driver: {e}", exc_info=True)
-            return False
+            return (False, 502, str(e))
     
     async def close(self):
         await self.client.close()

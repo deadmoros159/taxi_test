@@ -381,6 +381,7 @@ class CreateUserRequest(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=100)
     phone_number: str = Field(..., min_length=10, max_length=20)
     email: Optional[str] = Field(None, max_length=100)
+    role: Optional[UserRole] = Field(None, description="Роль при создании: driver — для регистрации водителя с нуля, иначе passenger")
 
 
 @router.post("/create", response_model=UserResponse, tags=["User Management"])
@@ -391,38 +392,32 @@ async def create_user_direct(
 ):
     """
     Создать пользователя напрямую (для офисной регистрации водителей).
-    
-    Используется когда человек приходит в офис и регистрируется с нуля.
-    Пользователь создается сразу верифицированным и активным.
-    Только для диспетчеров и админов.
+    Пользователь создается верифицированным и активным.
+    role=driver — создать сразу водителем (вызов из driver-service register-full).
     """
     user_repo = UserRepository(db)
-    
-    # Проверяем, не существует ли уже пользователь с таким телефоном
     existing_phone = await user_repo.get_by_phone(request_data.phone_number)
     if existing_phone:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="User with this phone number already exists"
+            detail="User with this phone number already exists",
         )
-    
-    # Проверяем email, если указан
     if request_data.email:
         existing_email = await user_repo.get_by_email(request_data.email)
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="User with this email already exists"
+                detail="User with this email already exists",
             )
-    
-    # Создаем пользователя (по умолчанию роль passenger, но можно изменить позже)
+    # Диспетчер/админ могут создать только passenger или driver
+    create_role = request_data.role if request_data.role in (UserRole.PASSENGER, UserRole.DRIVER) else UserRole.PASSENGER
     user = await user_repo.create_user(
         phone_number=request_data.phone_number,
         email=request_data.email,
         full_name=request_data.full_name,
-        is_verified=True,  # Верифицирован сразу при офисной регистрации
-        is_active=True,    # Активен сразу
-        role=UserRole.PASSENGER.value  # По умолчанию пассажир, роль изменится при регистрации водителя
+        is_verified=True,
+        is_active=True,
+        role=create_role.value,
     )
     
     logger.info(f"User created directly by {current_user.id}: {user.id} - {request_data.phone_number}")

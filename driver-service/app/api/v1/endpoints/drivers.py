@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 import logging
 
 shared_path = os.path.join(os.path.dirname(__file__), '../../../../shared')
@@ -150,13 +150,15 @@ def _vehicle_to_response(vehicle):
     )
 
 
-def _user_to_driver_user_info(user_data: dict):
-    """Из ответа auth-service собрать DriverUserInfo."""
+def _user_to_driver_user_info(user_data: dict, driver_id: Optional[int] = None):
+    """Из ответа auth-service собрать DriverUserInfo. Если передан driver_id, имя 'User'/пустое заменяется на 'Водитель #id'."""
     if not user_data:
         return None
+    raw_name = user_data.get("full_name", "") or ""
+    full_name = _normalize_driver_display_name(raw_name, driver_id) if driver_id else raw_name
     return DriverUserInfo(
         id=user_data.get("id"),
-        full_name=user_data.get("full_name", ""),
+        full_name=full_name,
         phone_number=user_data.get("phone_number"),
         email=user_data.get("email"),
     )
@@ -172,10 +174,10 @@ async def _driver_to_response(driver, token: str = None, current_user_data: dict
     rating, balance, debt_info = None, None, None
     user_info = None
     if current_user_data and current_user_data.get("id") == driver.user_id:
-        user_info = _user_to_driver_user_info(current_user_data)
+        user_info = _user_to_driver_user_info(current_user_data, driver.id)
     elif token:
         user_data = await auth_client.get_user_info(driver.user_id, token)
-        user_info = _user_to_driver_user_info(user_data)
+        user_info = _user_to_driver_user_info(user_data, driver.id)
     if token:
         summary = await order_client.get_driver_summary(driver.user_id, token)
         rating, balance, debt_info = _summary_to_response_fields(summary)
@@ -204,6 +206,13 @@ async def _driver_to_response(driver, token: str = None, current_user_data: dict
     )
 
 
+def _normalize_driver_display_name(full_name: str, driver_id: int) -> str:
+    """Если имя пустое или дефолтное 'User' — подставить 'Водитель #id'."""
+    if not full_name or (full_name or "").strip() in ("", "User"):
+        return f"Водитель #{driver_id}"
+    return (full_name or "").strip()
+
+
 async def _driver_to_list_response(driver, token: str = None):
     """Собрать карточку водителя для списка: имя, машина с госномером, рейтинг, баланс, статус."""
     full_name = ""
@@ -211,6 +220,7 @@ async def _driver_to_list_response(driver, token: str = None):
         user_data = await auth_client.get_user_info(driver.user_id, token)
         if user_data:
             full_name = user_data.get("full_name", "")
+    full_name = _normalize_driver_display_name(full_name, driver.id)
     vehicle_display = ""
     if driver.vehicle:
         v = driver.vehicle
@@ -383,12 +393,12 @@ async def register_driver(
         driver_photo_media_id=request.driver_photo_media_id,
     )
     
-    promoted = await auth_client.promote_user_to_driver(request.user_id, token)
+    promoted, err_status, err_detail = await auth_client.promote_user_to_driver(request.user_id, token)
     if not promoted:
-        logger.warning(
-            f"Driver created in driver-service but failed to promote user role in auth-service: user_id={request.user_id}"
+        raise HTTPException(
+            status_code=err_status or 502,
+            detail=err_detail or "Не удалось выставить роль driver в auth-service. Проверьте логи.",
         )
-    
     logger.info(f"Driver registered for existing user {request.user_id} by dispatcher {dispatcher_id}")
     
     return await _driver_to_response(driver, token)
@@ -432,7 +442,8 @@ async def register_driver_full(
         full_name=request.full_name,
         phone_number=request.phone_number,
         email=request.email,
-        token=token
+        token=token,
+        role="driver",
     )
     if auth_error_status is not None:
         raise HTTPException(
@@ -466,13 +477,7 @@ async def register_driver_full(
         passport_photo_media_id=request.passport_photo_media_id,
         driver_photo_media_id=request.driver_photo_media_id,
     )
-    
-    promoted = await auth_client.promote_user_to_driver(user_id, token)
-    if not promoted:
-        logger.warning(
-            f"Driver created in driver-service but failed to promote user role in auth-service: user_id={user_id}"
-        )
-    
+    # Роль driver уже выставлена при создании user (role=driver в create_user_direct)
     logger.info(f"Driver registered from scratch: user_id={user_id}, driver_id={driver.id} by dispatcher {dispatcher_id}")
     
     return await _driver_to_response(driver, token)

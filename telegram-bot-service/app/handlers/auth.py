@@ -125,20 +125,23 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
 @router.callback_query(F.data.startswith("lang:"))
 async def cb_lang(callback: CallbackQuery):
     """Обработка выбора языка."""
+    await callback.answer()  # Сразу убираем "думает" — иначе при ошибке ниже юзер висит
     lang = callback.data.replace("lang:", "")
     if lang not in ("ru", "uz"):
-        await callback.answer()
         return
 
     telegram_user_id = callback.from_user.id
     _set_lang(telegram_user_id, lang)
 
-    await callback.message.edit_text(get_text("lang_set", lang), reply_markup=None)
-    await callback.message.answer(
-        get_text("welcome_reg", lang),
-        reply_markup=get_contact_keyboard(lang)
-    )
-    await callback.answer()
+    try:
+        await callback.message.edit_text(get_text("lang_set", lang), reply_markup=None)
+        await callback.message.answer(
+            get_text("welcome_reg", lang),
+            reply_markup=get_contact_keyboard(lang)
+        )
+    except Exception as e:
+        logger.exception(f"cb_lang error: {e}")
+        await callback.message.answer(get_text("welcome_reg", lang), reply_markup=get_contact_keyboard(lang))
 
 
 @router.message(F.contact)

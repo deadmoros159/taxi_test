@@ -122,10 +122,14 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
     )
 
 
-@router.callback_query(F.data.startswith("lang:"))
+@router.callback_query()
 async def cb_lang(callback: CallbackQuery):
-    """Обработка выбора языка."""
-    await callback.answer()  # Сразу убираем "думает" — иначе при ошибке ниже юзер висит
+    """Обработка выбора языка (и логирование неизвестных callback)."""
+    logger.info(f"cb_lang called: data={callback.data!r}")
+    await callback.answer()
+    if not callback.data or not callback.data.startswith("lang:"):
+        logger.warning(f"Unknown callback_data: {callback.data!r}")
+        return
     lang = callback.data.replace("lang:", "")
     if lang not in ("ru", "uz"):
         return

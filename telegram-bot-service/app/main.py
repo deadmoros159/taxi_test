@@ -165,6 +165,10 @@ def create_fastapi_app() -> FastAPI:
         try:
             from aiogram.types import Update
             update = Update(**body)
+            if update.callback_query:
+                logger.info(f"Incoming CallbackQuery: data={update.callback_query.data!r}")
+            elif update.message:
+                logger.info(f"Incoming Message: text={update.message.text!r}")
             await dp.feed_update(bot, update)
             return {"ok": True}
         except Exception as e:

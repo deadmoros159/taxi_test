@@ -37,7 +37,7 @@ class UserRepository:
         return result.scalar_one_or_none()
 
     async def create_user(self, phone_number: str = None, email: str = None, full_name: str = None, **kwargs) -> User:
-        user_data = {"full_name": full_name or "User", **kwargs}
+        user_data = {"full_name": (full_name or "").strip() or "Водитель", **kwargs}
         if phone_number:
             user_data["phone_number"] = phone_number
         if email:

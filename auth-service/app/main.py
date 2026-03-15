@@ -10,7 +10,7 @@ import sys
 import os
 import re
 
-from app.api.v1.endpoints import auth, users
+from app.api.v1.endpoints import auth, users, internal
 from app.core.config import settings
 from app.core.database import engine, Base, check_db_connection
 from app.services.sms_service import sms_service
@@ -275,6 +275,9 @@ app.include_router(auth.admin_router, prefix=f"{settings.API_V1_PREFIX}/auth/adm
 # Управление пользователями и сотрудниками
 app.include_router(users.staff_router, prefix=f"{settings.API_V1_PREFIX}/users")
 app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users")
+
+# Внутренние API (межсервисные)
+app.include_router(internal.router, prefix=f"{settings.API_V1_PREFIX}/internal", tags=["Internal"])
 
 
 # Health check endpoint

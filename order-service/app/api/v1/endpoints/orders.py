@@ -12,6 +12,7 @@ from app.repositories.order_repository import OrderRepository
 from app.repositories.driver_debt_repository import DriverDebtRepository
 from app.services.order_service import OrderService
 from app.services.websocket_manager import websocket_manager
+from app.services.telegram_notify_service import notify_telegram_order_status
 from app.schemas.order import (
     OrderCreate, OrderResponse, OrderCancel, OrderAccept,
     OrderStatusUpdate, OrderDetailAdminResponse, OrderLocationUpdate, OrderCompleteData
@@ -207,7 +208,8 @@ async def accept_order(
     
     await websocket_manager.send_order_update(order)
     await websocket_manager.send_order_accepted(order)
-    
+    await notify_telegram_order_status(order)
+
     return order
 
 
@@ -241,7 +243,8 @@ async def cancel_order(
         )
     
     await websocket_manager.send_order_update(order)
-    
+    await notify_telegram_order_status(order)
+
     return order
 
 
@@ -293,7 +296,8 @@ async def driver_arrived(
         )
     
     await websocket_manager.send_order_update(updated_order)
-    
+    await notify_telegram_order_status(updated_order)
+
     return updated_order
 
 
@@ -345,7 +349,8 @@ async def start_trip(
         )
     
     await websocket_manager.send_order_update(updated_order)
-    
+    await notify_telegram_order_status(updated_order)
+
     return updated_order
 
 
@@ -414,7 +419,8 @@ async def update_driver_location(
         )
     
     await websocket_manager.send_order_update(updated_order)
-    
+    # location update не меняет статус — Telegram не уведомляем
+
     return updated_order
 
 
@@ -447,7 +453,8 @@ async def complete_order(
         )
     
     await websocket_manager.send_order_update(order)
-    
+    await notify_telegram_order_status(order)
+
     return order
 
 
@@ -818,7 +825,8 @@ async def update_order_status(
         )
     
     await websocket_manager.send_order_update(updated_order)
-    
+    await notify_telegram_order_status(updated_order)
+
     return updated_order
 
 

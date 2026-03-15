@@ -162,6 +162,12 @@ class Settings(BaseSettings):
         description="Разрешенные префиксы номеров телефонов"
     )
     
+    # Internal API (для межсервисных вызовов: order-service -> auth)
+    INTERNAL_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Ключ для внутренних API. Если не задан, внутренние эндпоинты недоступны."
+    )
+
     # External Services
     DRIVER_SERVICE_URL: str = Field(
         default="http://driver-service:8001",

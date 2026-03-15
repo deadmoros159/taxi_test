@@ -28,6 +28,7 @@ services:
       - SMTP_USERNAME=support@xhap.ru
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SENDER_EMAIL=support@xhap.ru
+      - INTERNAL_API_KEY=${AUTH_INTERNAL_KEY:-}
     env_file:
       - ./auth-service/.env
     depends_on:
@@ -100,6 +101,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres-order:5432/order_db
       - AUTH_SERVICE_URL=http://auth-service:8000
       - DRIVER_SERVICE_URL=http://driver-service:8001
+      - TELEGRAM_BOT_SERVICE_URL=http://telegram-bot-service:8004
+      - AUTH_INTERNAL_KEY=${AUTH_INTERNAL_KEY:-}
     depends_on:
       postgres-order:
         condition: service_healthy

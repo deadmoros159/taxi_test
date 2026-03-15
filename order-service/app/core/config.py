@@ -46,6 +46,14 @@ class Settings(BaseSettings):
         default="http://driver-service:8001",
         description="URL driver-service"
     )
+    TELEGRAM_BOT_SERVICE_URL: str = Field(
+        default="http://telegram-bot-service:8004",
+        description="URL telegram-bot-service для уведомлений"
+    )
+    AUTH_INTERNAL_KEY: Optional[str] = Field(
+        default=None,
+        description="Ключ для вызова внутренних API auth-service (X-Internal-Key)"
+    )
     
     # Order Settings
     DRIVER_COMMISSION_PERCENT: float = 20.0  # 20% комиссия с каждого заказа

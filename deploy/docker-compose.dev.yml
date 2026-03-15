@@ -22,6 +22,7 @@ services:
       - REDIS_DB=0
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-auth:5432/auth_db
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - INTERNAL_API_KEY=${AUTH_INTERNAL_KEY:-}
     env_file:
       - ../auth-service/.env
     depends_on:
@@ -97,6 +98,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres-order:5432/order_db
       - AUTH_SERVICE_URL=http://auth-service:8000
       - DRIVER_SERVICE_URL=http://driver-service:8001
+      - TELEGRAM_BOT_SERVICE_URL=http://telegram-bot-service:8004
+      - AUTH_INTERNAL_KEY=${AUTH_INTERNAL_KEY:-}
     depends_on:
       postgres-order:
         condition: service_healthy

@@ -37,7 +37,8 @@ async def on_startup_bot(bot: Bot) -> None:
         await bot.set_webhook(
             url=webhook_url,
             secret_token=secret_token,
-            drop_pending_updates=True
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"],
         )
         logger.info(f"✅ Webhook установлен: {webhook_url}")
         bot_info = await bot.get_me()

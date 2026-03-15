@@ -124,13 +124,20 @@ async def cmd_start(message: Message, command: CommandObject | None = None):
 
 @router.callback_query()
 async def cb_lang(callback: CallbackQuery):
-    """Обработка выбора языка (и логирование неизвестных callback)."""
-    logger.info(f"cb_lang called: data={callback.data!r}")
-    await callback.answer()
-    if not callback.data or not callback.data.startswith("lang:"):
-        logger.warning(f"Unknown callback_data: {callback.data!r}")
+    """Обработка выбора языка."""
+    try:
+        await callback.answer()  # первым делом — убрать "думает"
+    except Exception as e:
+        logger.exception(f"callback.answer() failed: {e}")
         return
-    lang = callback.data.replace("lang:", "")
+
+    data = getattr(callback, "data", None) or ""
+    logger.info(f"cb_lang: data={data!r}")
+
+    if not data.startswith("lang:"):
+        logger.warning(f"Unknown callback: {data!r}")
+        return
+    lang = data.replace("lang:", "")
     if lang not in ("ru", "uz"):
         return
 
@@ -139,13 +146,12 @@ async def cb_lang(callback: CallbackQuery):
 
     try:
         await callback.message.edit_text(get_text("lang_set", lang), reply_markup=None)
-        await callback.message.answer(
-            get_text("welcome_reg", lang),
-            reply_markup=get_contact_keyboard(lang)
-        )
     except Exception as e:
-        logger.exception(f"cb_lang error: {e}")
-        await callback.message.answer(get_text("welcome_reg", lang), reply_markup=get_contact_keyboard(lang))
+        logger.warning(f"edit_text failed: {e}")
+    await callback.message.answer(
+        get_text("welcome_reg", lang),
+        reply_markup=get_contact_keyboard(lang)
+    )
 
 
 @router.message(F.contact)

@@ -162,13 +162,15 @@ def create_fastapi_app() -> FastAPI:
                 )
         
         body = await request.json()
+        update_type = "callback_query" if "callback_query" in body else ("message" if "message" in body else list(body.keys()))
+        logger.info(f"Webhook received: {update_type}")
         try:
             from aiogram.types import Update
             update = Update(**body)
             if update.callback_query:
-                logger.info(f"Incoming CallbackQuery: data={update.callback_query.data!r}")
+                logger.info(f"CallbackQuery: data={update.callback_query.data!r}")
             elif update.message:
-                logger.info(f"Incoming Message: text={update.message.text!r}")
+                logger.info(f"Message: text={getattr(update.message, 'text', None)!r}")
             await dp.feed_update(bot, update)
             return {"ok": True}
         except Exception as e:
